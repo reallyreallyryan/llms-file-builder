@@ -1,0 +1,3 @@
+# Placeholder for future configuration options
+default_output_filename: "LLMS.txt"
+status_filter: 200
