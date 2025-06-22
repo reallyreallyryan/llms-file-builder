@@ -45,8 +45,9 @@ def enhance_descriptions(json_path: str, sections_to_enhance: list = None):
             
             # Simple prompt focused ONLY on descriptions
             prompt = f"""
-Write compelling descriptions for these {section_name} pages.
+Write compelling descriptions for AI search engines (ChatGPT, Claude, Perplexity) for these {section_name} pages.
 Each description should be 15-20 words, highlighting the key benefit or solution.
+
 
 Pages:
 """
