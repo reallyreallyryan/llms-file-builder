@@ -152,7 +152,28 @@ class Categorizer:
         meta = page.get('Meta Description 1', '').lower()
         h1 = page.get('H1-1', '').lower()
         
-        # Combine all text for matching
+        # PRIORITY 1: Check URL structure first for definitive categorization
+        # Blog posts should ALWAYS go in Blog category
+        if '/blog/' in url:
+            return "Blog"
+        
+        # Patient info/resources pages
+        if '/patient-information/' in url or '/patient-resources/' in url:
+            return "Patient Resources"
+        
+        # Location pages
+        if '/locations/' in url:
+            return "Locations"
+        
+        # Provider/physician pages
+        if '/physicians/' in url or '/providers/' in url:
+            return "Providers"
+        
+        # Service pages
+        if '/services/' in url:
+            return "Services"
+        
+        # PRIORITY 2: If no clear URL pattern, use content matching
         combined_text = f"{url} {title} {meta} {h1}"
         url_segments = self.extract_url_segments(url)
         
@@ -193,38 +214,75 @@ class Categorizer:
         content = json.dumps(simplified)
         return len(self.encoding.encode(content))
     
+# Update for categorizer.py - gpt_categorize_batch method
+
     def gpt_categorize_batch(self, pages: List[Dict], site_context: str = "") -> Dict[str, List[Dict]]:
-        """Categorize a batch of pages using GPT"""
+        """Categorize a batch of pages using GPT with medical SEO focus"""
         simplified = [self.prepare_page_for_gpt(p) for p in pages]
         
         # Get available categories
         categories = list(self.patterns.keys()) + ["Other"]
         
-        prompt = f"""You are helping organize website pages for an LLMS.txt file.
+        # Enhanced medical SEO prompt
+        prompt = f"""You are an SEO expert specializing in medical and healthcare websites. Your task is to categorize pages and write descriptions that maximize search visibility and user value.
 
-{f"Site context: {site_context}" if site_context else ""}
+    {f"Site context: {site_context}" if site_context else ""}
 
-Group these pages into logical sections. Use these categories when applicable:
-{', '.join(categories)}
+    MEDICAL WEBSITE CATEGORIES:
+    - Services: Medical procedures, treatments, surgeries, therapies
+    - Providers: Doctors, surgeons, veterinarians, dentists, specialists, medical staff
+    - Locations: Offices, clinics, hospitals, care centers
+    - Patient Resources: Forms, FAQs, insurance, patient guides, appointment info
+    - Blog: Educational articles, news, health tips, patient stories
+    - About: Company info, mission, values, history
+    - Other: Anything that doesn't fit above
 
-For each page, write a 1-2 sentence description that explains what the page offers, 
-based ONLY on the URL, title, meta description, and H1 provided.
+    For each page, write a description that:
+    1. Identifies the MEDICAL CONDITION, PROBLEM, or NEED being addressed
+    2. Mentions the SOLUTION, TREATMENT, or SERVICE offered
+    3. Highlights the KEY BENEFIT or OUTCOME for patients
+    4. Uses terms patients/clients actually search for (avoid heavy medical jargon)
+    5. Is 15-25 words, specific and action-oriented
 
-Important:
-- If a URL looks like an image or asset file (ends in .jpg, .png, .css, .js, etc), skip it
-- Focus on actual content pages
-- Use the title provided, don't change it
+    DESCRIPTION FORMULA:
+    [Condition/Problem] + [Treatment/Solution] + [Benefit/Outcome] + [Unique Value if applicable]
 
-Return JSON with section names as keys and arrays of objects with 'url', 'title', and 'description'.
+    EXAMPLES BY TYPE:
+    - Surgery: "Minimally invasive gallbladder removal surgery with faster recovery times and reduced scarring"
+    - Dental: "Emergency tooth extraction services available same-day for severe pain relief"
+    - Veterinary: "Comprehensive pet wellness exams to detect health issues early and extend pet lifespan"
+    - Home Care: "24/7 skilled nursing care at home for post-surgery recovery and chronic conditions"
+    - Pain Management: "Non-surgical spinal decompression therapy for lasting relief from chronic back pain"
+    - Provider: "Board-certified orthopedic surgeon specializing in sports injuries and joint replacement"
+    - Location: "Full-service medical clinic offering primary care, diagnostics, and specialty referrals"
 
-Pages to categorize:
-{json.dumps(simplified, indent=2)}"""
+    SPECIAL RULES:
+    - Homepage (just "/" URL): Categorize as "About" with description summarizing practice focus
+    - If title and URL conflict, trust the URL structure
+    - For duplicate titles, write unique descriptions based on the URL context
+    - For blog posts, focus on the question answered or problem solved
+    - For location pages, mention key services available at that location
+    - Keep location mentions generic (don't assume specific cities/states)
+
+    Return JSON with section names as keys and arrays of objects with 'url', 'title', and 'description'.
+
+    Pages to categorize:
+    {json.dumps(simplified, indent=2)}"""
 
         try:
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,  # Lower temperature for consistency
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "You are a medical SEO expert. Create descriptions that help patients find the right healthcare services and providers for their needs."
+                    },
+                    {
+                        "role": "user", 
+                        "content": prompt
+                    }
+                ],
+                temperature=0.4,  # Slightly higher for more natural descriptions
                 max_tokens=2000
             )
             
@@ -237,15 +295,36 @@ Pages to categorize:
                 # Map URLs back to original page data
                 url_to_page = {p['Address']: p for p in pages}
                 
-                # Update with original titles if they exist
+                # Post-process results
                 for category, items in result.items():
+                    processed_items = []
+                    seen_titles = set()
+                    
                     for item in items:
                         original_page = url_to_page.get(item['url'])
                         if original_page:
                             display_data = self.prepare_page_for_display(original_page)
-                            item['title'] = display_data['title']
-                            if not item.get('description'):
-                                item['description'] = display_data['description']
+                            
+                            # Skip obvious duplicates
+                            if display_data['title'] in seen_titles:
+                                logger.warning(f"Skipping duplicate title: {display_data['title']}")
+                                continue
+                            
+                            seen_titles.add(display_data['title'])
+                            
+                            # Use GPT's description if it's better than original
+                            gpt_desc = item.get('description', '')
+                            original_desc = display_data['description']
+                            
+                            # Use GPT description if it's more specific/useful
+                            if gpt_desc and len(gpt_desc) > len(original_desc):
+                                display_data['description'] = gpt_desc
+                            elif not original_desc:
+                                display_data['description'] = gpt_desc or f"Learn more about {display_data['title'].lower()}"
+                            
+                            processed_items.append(display_data)
+                    
+                    result[category] = processed_items
                 
                 return result
             else:
@@ -253,7 +332,38 @@ Pages to categorize:
                 
         except Exception as e:
             logger.error(f"GPT categorization failed: {str(e)}")
-            raise
+            # Fallback to pattern-based
+            logger.info("Falling back to pattern-based categorization")
+            fallback_results = defaultdict(list)
+            
+            for page in pages:
+                category = self.pattern_based_categorize(page)
+                page_entry = self.prepare_page_for_display(page)
+                
+                # Add better fallback descriptions for medical content
+                if not page_entry['description']:
+                    title = page_entry['title'].lower()
+                    url = page_entry.get('url', '').lower()
+                    
+                    # Determine content type and create appropriate description
+                    if 'surgery' in title or 'procedure' in title:
+                        page_entry['description'] = f"Advanced {page_entry['title'].lower()} with expert care and proven outcomes"
+                    elif 'treatment' in title or 'therapy' in title:
+                        page_entry['description'] = f"Effective {page_entry['title'].lower()} to improve health and quality of life"
+                    elif 'dr.' in title or 'md' in title or 'do' in title:
+                        page_entry['description'] = f"{page_entry['title']} - dedicated to providing exceptional patient care"
+                    elif '/locations/' in url:
+                        page_entry['description'] = f"Convenient medical care and services available at our {page_entry['title']} location"
+                    elif 'cancer' in title:
+                        page_entry['description'] = f"Comprehensive {page_entry['title'].lower()} with personalized treatment plans"
+                    elif 'pain' in title:
+                        page_entry['description'] = f"Expert solutions for {page_entry['title'].lower()} to restore function and comfort"
+                    else:
+                        page_entry['description'] = f"Learn more about {page_entry['title'].lower()}"
+                
+                fallback_results[category].append(page_entry)
+            
+            return dict(fallback_results)
     
     def categorize_pages(self, pages: List[Dict], site_metadata: Dict) -> Dict[str, List[Dict]]:
         """Main categorization method"""

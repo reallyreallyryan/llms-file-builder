@@ -211,6 +211,22 @@ class CSVProcessor:
         hubspot_pattern = r'/(hs-fs|hub_generated|_hcms|hs)/'
         mask = mask & ~df['Address'].str.contains(hubspot_pattern, regex=True, na=False)
         
+        # Filter out common CMS junk pages
+        cms_junk_patterns = [
+            r'/tag/',
+            r'/category/', 
+            r'/author/',
+            r'/page/\d+',  # Pagination
+            r'/\d{4}/\d{2}/',  # Date archives like /2024/05/
+            r'/feed/',
+            r'/wp-',  # WordPress system pages
+            r'/hs-',  # HubSpot system pages
+        ]
+        
+        # Apply CMS filters
+        for pattern in cms_junk_patterns:
+            mask = mask & ~df['Address'].str.contains(pattern, regex=True, na=False)
+        
         filtered_df = df[mask].copy()
         
         # Also filter out pages with empty titles (likely non-content)
@@ -218,6 +234,19 @@ class CSVProcessor:
             (filtered_df['Title 1'].notna()) & 
             (filtered_df['Title 1'].str.strip() != '')
         ]
+        
+        # Filter out blog tag/archive pages by title pattern
+        blog_archive_patterns = [
+            # Pattern for "X Blog | Y" where Y is a tag/category/author
+            r'Blog\s*\|\s*(Admin|Dr\.|Awards|Tags?|Categories?|Archives?|Health|News|Media|Hernia|Melanoma|Pain)',
+            # Pattern for generic blog archive pages
+            r'^\s*[^|]+Blog\s*$',  # Just "Something Blog" with no real content
+            # Pattern for tag pages that might not have /tag/ in URL
+            r'\|\s*Latest news for',  # Common WordPress archive page pattern
+        ]
+        
+        for pattern in blog_archive_patterns:
+            filtered_df = filtered_df[~filtered_df['Title 1'].str.contains(pattern, regex=True, na=False)]
         
         logger.info(f"Filtered out {len(df) - len(filtered_df)} non-content pages")
         
@@ -241,21 +270,136 @@ class CSVProcessor:
         
         return filtered
     
+    def improve_descriptions(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Improve empty or duplicate descriptions"""
+        df = df.copy()
+        
+        for idx, row in df.iterrows():
+            url = row['Address'].lower()
+            title = row['Title 1']
+            description = row['Meta Description 1']
+            
+            # Fix empty descriptions or descriptions that just repeat the title
+            if not description or description == title:
+                # Lymph node procedures
+                if '/lymph-node-procedures/' in url:
+                    if 'excisional' in title.lower():
+                        description = "Surgical removal of entire lymph node for comprehensive cancer diagnosis and staging"
+                    elif 'sentinel' in title.lower():
+                        description = "Minimally invasive lymph node biopsy to detect cancer spread with reduced complications"
+                    else:
+                        description = "Advanced lymph node diagnostic procedure for accurate cancer detection and treatment planning"
+                
+                # Location pages with just city names
+                elif '/locations/' in url and len(title) < 50:
+                    # Extract city name from title
+                    city = title.replace('General & Breast Surgery in', '').replace('| PSN', '').strip()
+                    description = f"Expert breast and general surgery services available at our {city} location with compassionate care"
+                
+                # Generic cyst removal pages
+                elif 'cyst removal' in title.lower():
+                    if 'cholecystectomy' in url:
+                        description = "Gallbladder removal surgery for gallstones and cholecystitis with minimally invasive options available"
+                    elif 'skin' in url:
+                        description = "Safe removal of skin cysts including sebaceous, epidermoid, and pilar cysts with minimal scarring"
+                    else:
+                        description = "Expert surgical cyst removal procedures with focus on complete excision and cosmetic results"
+                
+                # Skin cancer pages
+                elif 'skin cancer' in title.lower():
+                    if 'melanoma' in url:
+                        description = "Specialized melanoma treatment including wide excision surgery and sentinel node biopsy"
+                    elif 'basal' in url:
+                        description = "Effective basal cell carcinoma removal with Mohs surgery and reconstruction options"
+                    elif 'squamous' in url:
+                        description = "Comprehensive squamous cell carcinoma treatment with surgical excision and margin analysis"
+                    else:
+                        description = "Advanced surgical treatment for all skin cancer types with focus on complete removal"
+                
+                # Homepage
+                elif url.endswith('.com/') or url.endswith('.com'):
+                    description = "Leading surgical practice specializing in breast cancer, hernia repair, and minimally invasive procedures"
+                
+                # Generic medical pages
+                elif any(term in title.lower() for term in ['surgery', 'procedure', 'treatment']):
+                    description = f"{title} with experienced surgeons providing personalized care and optimal outcomes"
+                
+                # Update the description
+                df.at[idx, 'Meta Description 1'] = description
+        
+        return df
+    
     def deduplicate_urls(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Remove duplicate URLs, keeping first occurrence"""
-        # Normalize URLs (remove trailing slashes)
+        """Remove duplicate URLs and duplicate titles, keeping best version"""
+        # First, normalize URLs (remove trailing slashes)
         df['normalized_url'] = df['Address'].str.rstrip('/').str.strip()
         
-        # Drop duplicates based on normalized URL
-        deduped = df.drop_duplicates(subset=['normalized_url'], keep='first')
+        # Drop URL duplicates
+        df = df.drop_duplicates(subset=['normalized_url'], keep='first')
+        logger.info(f"After URL deduplication: {len(df)} pages")
         
-        logger.info(f"Removed {len(df) - len(deduped)} duplicate URLs")
+        # Handle title duplicates more intelligently
+        title_duplicates = df[df.duplicated(subset=['Title 1'], keep=False)].copy()
         
-        return deduped
+        if len(title_duplicates) > 0:
+            # Group by title
+            title_groups = title_duplicates.groupby('Title 1')
+            
+            indices_to_drop = []
+            
+            for title, group in title_groups:
+                if len(group) > 1:
+                    # Sort by criteria to keep the best page:
+                    # 1. Prefer service pages over location pages
+                    # 2. Prefer pages with longer, more specific URLs
+                    # 3. Prefer pages with meta descriptions
+                    
+                    group['priority'] = 0
+                    
+                    # Scoring system
+                    for idx, row in group.iterrows():
+                        url = row['Address'].lower()
+                        
+                        # Service pages get highest priority
+                        if '/services/' in url:
+                            group.at[idx, 'priority'] = 10
+                        # Gastrointestinal is likely miscategorized
+                        elif '/gastrointestinal-procedures' in url and 'skin' in title.lower():
+                            group.at[idx, 'priority'] = -10
+                        # Location pages with wrong titles get lowest priority
+                        elif '/locations' in url and 'cyst removal' in title.lower():
+                            group.at[idx, 'priority'] = -20
+                        # Prefer specific procedure URLs
+                        elif any(term in url for term in ['/procedures/', '/treatments/']):
+                            group.at[idx, 'priority'] = 8
+                        
+                        # Add points for having a description
+                        if row['Meta Description 1']:
+                            group.at[idx, 'priority'] += 2
+                        
+                        # Add points for URL specificity (more segments = more specific)
+                        url_depth = len([s for s in url.split('/') if s])
+                        group.at[idx, 'priority'] += url_depth * 0.5
+                    
+                    # Keep the highest priority page
+                    best_idx = group['priority'].idxmax()
+                    drop_indices = [idx for idx in group.index if idx != best_idx]
+                    indices_to_drop.extend(drop_indices)
+                    
+                    logger.info(f"Duplicate '{title}': keeping {group.loc[best_idx, 'Address']}")
+            
+            # Drop the duplicates
+            if indices_to_drop:
+                df = df.drop(indices_to_drop)
+                logger.info(f"Removed {len(indices_to_drop)} duplicate titles")
+        
+        logger.info(f"After title deduplication: {len(df)} pages")
+        
+        return df
     
     def extract_site_metadata(self, df: pd.DataFrame) -> Dict[str, str]:
         """Extract site-level metadata from homepage"""
-        # Assume first row or root URL is homepage
+        # Look for homepage
         homepage_candidates = df[df['Address'].str.match(r'^https?://[^/]+/?$')]
         
         if not homepage_candidates.empty:
@@ -295,11 +439,13 @@ class CSVProcessor:
         # Filter and clean
         filtered_df = self.filter_indexable_pages()
         
-        # Additional content filtering if quality is poor
-        if not quality_analysis['appears_filtered']:
-            logger.warning("CSV appears to contain non-HTML content, applying additional filters")
-            filtered_df = self.filter_content_pages(filtered_df)
+        # Additional content filtering
+        filtered_df = self.filter_content_pages(filtered_df)
         
+        # Improve descriptions before deduplication
+        filtered_df = self.improve_descriptions(filtered_df)
+        
+        # Remove duplicates (both URL and title based)
         deduped_df = self.deduplicate_urls(filtered_df)
         
         # Extract metadata
