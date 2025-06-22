@@ -17,6 +17,15 @@ class LLMSGenerator:
     def __init__(self, output_dir: str = "exports"):
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
+
+    CATEGORY_ORDER = [
+        "About",           # Site context first
+        "Services",        # Core offerings
+        "Providers",       # Who performs services
+        "Locations",       # Where to get services
+        "Patient Resources", # Supporting info
+        "Blog"             # Educational content last
+    ]
     
     def generate_markdown(self, 
                          site_metadata: Dict,
@@ -64,6 +73,44 @@ class LLMSGenerator:
                     lines.append(f"- [{title}]({url})")
             
             lines.append("")  # Empty line after each section
+        
+        for category, pages in categorized_pages.items():
+            if category not in self.CATEGORY_ORDER and pages:
+                lines.append(f"## {category}")
+                lines.append("")
+                
+                sorted_pages = sorted(pages, key=lambda x: x.get('title', ''))
+                
+                for page in sorted_pages:
+                    url = page.get('url', '')
+                    title = page.get('title', 'Untitled')
+                    description = page.get('description', '')
+                    
+                    if description:
+                        lines.append(f"- [{title}]({url}): {description}")
+                    else:
+                        lines.append(f"- [{title}]({url})")
+                
+                lines.append("")
+        
+        for category, pages in categorized_pages.items():
+            if category not in self.CATEGORY_ORDER and pages:
+                lines.append(f"## {category}")
+                lines.append("")
+                
+                sorted_pages = sorted(pages, key=lambda x: x.get('title', ''))
+                
+                for page in sorted_pages:
+                    url = page.get('url', '')
+                    title = page.get('title', 'Untitled')
+                    description = page.get('description', '')
+                    
+                    if description:
+                        lines.append(f"- [{title}]({url}): {description}")
+                    else:
+                        lines.append(f"- [{title}]({url})")
+                
+                lines.append("")
         
         return '\n'.join(lines)
     

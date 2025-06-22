@@ -1,8 +1,5 @@
-# run_simple.py
-"""
-Simplified run script that skips the new validation features
-Just processes the CSV file directly
-"""
+# Updated run_simple.py with clearer messaging
+
 import argparse
 import sys
 from pathlib import Path
@@ -20,7 +17,11 @@ def main():
     )
     
     parser.add_argument("csv_path", help="Path to Screaming Frog CSV export")
-    parser.add_argument("--use-gpt", action="store_true", help="Use GPT for categorization")
+    parser.add_argument(
+        "--use-gpt", 
+        action="store_true", 
+        help="Enhance descriptions with GPT for better AI search value"
+    )
     parser.add_argument("--output", type=str, help="Custom output filename")
     
     args = parser.parse_args()
@@ -30,13 +31,14 @@ def main():
         print(f"❌ Error: File not found: {args.csv_path}")
         sys.exit(1)
     
-    # Process directly
+    # Process
     print(f"Processing {args.csv_path}...")
     
     processor = LLMSProcessor(use_gpt=args.use_gpt)
     
     if args.use_gpt:
-        print("🤖 Using GPT for categorization...")
+        print("📋 Using pattern-based categorization (accurate)")
+        print("✨ Enhancing descriptions with GPT for AI search...")
     else:
         print("⚡ Using pattern-based categorization...")
     
@@ -52,7 +54,8 @@ def main():
         # Show categories
         if 'categories' in result:
             print("\n📁 Categories:")
-            for cat, count in result['categories'].items():
+            for cat, count in sorted(result['categories'].items(), 
+                                    key=lambda x: x[1], reverse=True):
                 if count > 0:
                     print(f"  {cat}: {count} pages")
         
@@ -61,6 +64,9 @@ def main():
             print(f"\n📄 Files saved:")
             print(f"  {result['files']['txt_path']}")
             print(f"  {result['files']['json_path']}")
+            
+        if args.use_gpt:
+            print("\n✨ Key sections enhanced with AI-optimized descriptions")
     else:
         print(f"\n❌ Error: {result.get('error', 'Unknown error')}")
 

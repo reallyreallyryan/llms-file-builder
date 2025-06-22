@@ -30,7 +30,8 @@ class Categorizer:
         ],
         "Blog": [
             "blog", "article", "post", "news", "education", "learn",
-            "guide", "tips", "advice", "resource", "insights", "update"
+            "guide", "tips", "advice", "resource", "insights", "update",
+            "announcement", "opens", "featured", "q&a", "interview" 
         ],
         "Providers": [
             "physician", "provider", "doctor", "team", "staff",
@@ -44,7 +45,8 @@ class Categorizer:
         "Patient Resources": [
             "patient", "form", "insurance", "download", "faq",
             "appointment", "schedule", "privacy", "policy", "rights",
-            "billing", "payment", "testimonial", "review"
+            "billing", "payment", "testimonial", "review",
+            "request-appointment", "payment-plan" 
         ],
         "About": [
             "about", "mission", "vision", "values", "history",
@@ -61,7 +63,7 @@ class Categorizer:
             if not api_key:
                 api_key = os.getenv("OPENAI_API_KEY")
             if not api_key:
-                raise ValueError("OpenAI API key required for GPT categorization")
+                raise ValueError("OpenAI API key required for GPT enhancement")
             
             self.client = OpenAI(api_key=api_key)
             self.encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
@@ -152,6 +154,20 @@ class Categorizer:
         meta = page.get('Meta Description 1', '').lower()
         h1 = page.get('H1-1', '').lower()
         
+        # PRIORITY 0: Check for news/announcement patterns FIRST
+        news_indicators = [
+            'new surgical center opens',
+            'opens flagship',
+            'featured in forbes',
+            'announcement',
+            'press release',
+            'news:'
+        ]
+        
+        for indicator in news_indicators:
+            if indicator in title or indicator in meta:
+                return "Blog"
+
         # PRIORITY 1: Check URL structure first for definitive categorization
         # Blog posts should ALWAYS go in Blog category
         if '/blog/' in url:
@@ -196,181 +212,19 @@ class Categorizer:
             return max(category_scores.items(), key=lambda x: x[1])[0]
         return "Other"
     
-    def prepare_page_for_gpt(self, page: Dict) -> Dict:
-        """Prepare page data for GPT processing"""
-        # First prepare display version to get proper title
-        display_data = self.prepare_page_for_display(page)
-        
-        return {
-            "url": display_data['url'],
-            "title": display_data['title'][:100],  # Limit length
-            "meta": display_data['description'][:150],
-            "h1": page.get("H1-1", "")[:100]
-        }
-    
-    def estimate_tokens(self, pages: List[Dict]) -> int:
-        """Estimate token count for GPT request"""
-        simplified = [self.prepare_page_for_gpt(p) for p in pages]
-        content = json.dumps(simplified)
-        return len(self.encoding.encode(content))
-    
-# Update for categorizer.py - gpt_categorize_batch method
-
-    def gpt_categorize_batch(self, pages: List[Dict], site_context: str = "") -> Dict[str, List[Dict]]:
-        """Categorize a batch of pages using GPT with medical SEO focus"""
-        simplified = [self.prepare_page_for_gpt(p) for p in pages]
-        
-        # Get available categories
-        categories = list(self.patterns.keys()) + ["Other"]
-        
-        # Enhanced medical SEO prompt
-        prompt = f"""You are an SEO expert specializing in medical and healthcare websites. Your task is to categorize pages and write descriptions that maximize search visibility and user value.
-
-    {f"Site context: {site_context}" if site_context else ""}
-
-    MEDICAL WEBSITE CATEGORIES:
-    - Services: Medical procedures, treatments, surgeries, therapies
-    - Providers: Doctors, surgeons, veterinarians, dentists, specialists, medical staff
-    - Locations: Offices, clinics, hospitals, care centers
-    - Patient Resources: Forms, FAQs, insurance, patient guides, appointment info
-    - Blog: Educational articles, news, health tips, patient stories
-    - About: Company info, mission, values, history
-    - Other: Anything that doesn't fit above
-
-    For each page, write a description that:
-    1. Identifies the MEDICAL CONDITION, PROBLEM, or NEED being addressed
-    2. Mentions the SOLUTION, TREATMENT, or SERVICE offered
-    3. Highlights the KEY BENEFIT or OUTCOME for patients
-    4. Uses terms patients/clients actually search for (avoid heavy medical jargon)
-    5. Is 15-25 words, specific and action-oriented
-
-    DESCRIPTION FORMULA:
-    [Condition/Problem] + [Treatment/Solution] + [Benefit/Outcome] + [Unique Value if applicable]
-
-    EXAMPLES BY TYPE:
-    - Surgery: "Minimally invasive gallbladder removal surgery with faster recovery times and reduced scarring"
-    - Dental: "Emergency tooth extraction services available same-day for severe pain relief"
-    - Veterinary: "Comprehensive pet wellness exams to detect health issues early and extend pet lifespan"
-    - Home Care: "24/7 skilled nursing care at home for post-surgery recovery and chronic conditions"
-    - Pain Management: "Non-surgical spinal decompression therapy for lasting relief from chronic back pain"
-    - Provider: "Board-certified orthopedic surgeon specializing in sports injuries and joint replacement"
-    - Location: "Full-service medical clinic offering primary care, diagnostics, and specialty referrals"
-
-    SPECIAL RULES:
-    - Homepage (just "/" URL): Categorize as "About" with description summarizing practice focus
-    - If title and URL conflict, trust the URL structure
-    - For duplicate titles, write unique descriptions based on the URL context
-    - For blog posts, focus on the question answered or problem solved
-    - For location pages, mention key services available at that location
-    - Keep location mentions generic (don't assume specific cities/states)
-
-    Return JSON with section names as keys and arrays of objects with 'url', 'title', and 'description'.
-
-    Pages to categorize:
-    {json.dumps(simplified, indent=2)}"""
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": "You are a medical SEO expert. Create descriptions that help patients find the right healthcare services and providers for their needs."
-                    },
-                    {
-                        "role": "user", 
-                        "content": prompt
-                    }
-                ],
-                temperature=0.4,  # Slightly higher for more natural descriptions
-                max_tokens=2000
-            )
-            
-            content = response.choices[0].message.content
-            # Extract JSON from response
-            json_match = re.search(r'\{[\s\S]*\}', content)
-            if json_match:
-                result = json.loads(json_match.group())
-                
-                # Map URLs back to original page data
-                url_to_page = {p['Address']: p for p in pages}
-                
-                # Post-process results
-                for category, items in result.items():
-                    processed_items = []
-                    seen_titles = set()
-                    
-                    for item in items:
-                        original_page = url_to_page.get(item['url'])
-                        if original_page:
-                            display_data = self.prepare_page_for_display(original_page)
-                            
-                            # Skip obvious duplicates
-                            if display_data['title'] in seen_titles:
-                                logger.warning(f"Skipping duplicate title: {display_data['title']}")
-                                continue
-                            
-                            seen_titles.add(display_data['title'])
-                            
-                            # Use GPT's description if it's better than original
-                            gpt_desc = item.get('description', '')
-                            original_desc = display_data['description']
-                            
-                            # Use GPT description if it's more specific/useful
-                            if gpt_desc and len(gpt_desc) > len(original_desc):
-                                display_data['description'] = gpt_desc
-                            elif not original_desc:
-                                display_data['description'] = gpt_desc or f"Learn more about {display_data['title'].lower()}"
-                            
-                            processed_items.append(display_data)
-                    
-                    result[category] = processed_items
-                
-                return result
-            else:
-                raise ValueError("No valid JSON in GPT response")
-                
-        except Exception as e:
-            logger.error(f"GPT categorization failed: {str(e)}")
-            # Fallback to pattern-based
-            logger.info("Falling back to pattern-based categorization")
-            fallback_results = defaultdict(list)
-            
-            for page in pages:
-                category = self.pattern_based_categorize(page)
-                page_entry = self.prepare_page_for_display(page)
-                
-                # Add better fallback descriptions for medical content
-                if not page_entry['description']:
-                    title = page_entry['title'].lower()
-                    url = page_entry.get('url', '').lower()
-                    
-                    # Determine content type and create appropriate description
-                    if 'surgery' in title or 'procedure' in title:
-                        page_entry['description'] = f"Advanced {page_entry['title'].lower()} with expert care and proven outcomes"
-                    elif 'treatment' in title or 'therapy' in title:
-                        page_entry['description'] = f"Effective {page_entry['title'].lower()} to improve health and quality of life"
-                    elif 'dr.' in title or 'md' in title or 'do' in title:
-                        page_entry['description'] = f"{page_entry['title']} - dedicated to providing exceptional patient care"
-                    elif '/locations/' in url:
-                        page_entry['description'] = f"Convenient medical care and services available at our {page_entry['title']} location"
-                    elif 'cancer' in title:
-                        page_entry['description'] = f"Comprehensive {page_entry['title'].lower()} with personalized treatment plans"
-                    elif 'pain' in title:
-                        page_entry['description'] = f"Expert solutions for {page_entry['title'].lower()} to restore function and comfort"
-                    else:
-                        page_entry['description'] = f"Learn more about {page_entry['title'].lower()}"
-                
-                fallback_results[category].append(page_entry)
-            
-            return dict(fallback_results)
-    
     def categorize_pages(self, pages: List[Dict], site_metadata: Dict) -> Dict[str, List[Dict]]:
-        """Main categorization method"""
+        """Main categorization method - ALWAYS use patterns, optionally enhance"""
+        
+        # ALWAYS use pattern-based categorization for accuracy
+        logger.info("Using pattern-based categorization...")
+        categorized = self._pattern_categorize_all(pages)
+        
+        # If GPT is enabled, use it ONLY for description enhancement
         if self.use_gpt:
-            return self._gpt_categorize_all(pages, site_metadata)
-        else:
-            return self._pattern_categorize_all(pages)
+            logger.info("Enhancing descriptions with GPT...")
+            categorized = self._enhance_categorized_descriptions(categorized, site_metadata)
+        
+        return categorized
     
     def _pattern_categorize_all(self, pages: List[Dict]) -> Dict[str, List[Dict]]:
         """Categorize all pages using patterns"""
@@ -393,61 +247,134 @@ class Categorizer:
         
         return sorted_categories
     
-    def _gpt_categorize_all(self, pages: List[Dict], site_metadata: Dict) -> Dict[str, List[Dict]]:
-        """Categorize all pages using GPT in chunks"""
-        MAX_TOKENS_PER_REQUEST = 3000  # Leave room for response
-        categorized = defaultdict(list)
+    def _enhance_categorized_descriptions(self, categorized: Dict[str, List[Dict]], 
+                                         site_metadata: Dict) -> Dict[str, List[Dict]]:
+        """Enhance descriptions for already-categorized pages"""
         
-        # Create site context
-        site_context = f"{site_metadata.get('site_title', '')} - {site_metadata.get('site_summary', '')}"
+        # Only enhance high-value sections
+        sections_to_enhance = ['Services', 'Providers', 'Locations']
+        enhanced_categorized = categorized.copy()
         
-        # Process in chunks
-        current_chunk = []
-        current_tokens = 0
-        
-        logger.info(f"Processing {len(pages)} pages with GPT...")
-        
-        for i, page in enumerate(pages):
-            page_tokens = self.estimate_tokens([page])
-            
-            if current_tokens + page_tokens > MAX_TOKENS_PER_REQUEST and current_chunk:
-                # Process current chunk
-                try:
-                    chunk_results = self.gpt_categorize_batch(current_chunk, site_context)
-                    for category, items in chunk_results.items():
-                        categorized[category].extend(items)
-                    logger.info(f"Processed chunk: {len(current_chunk)} pages")
-                except Exception as e:
-                    logger.error(f"GPT chunk failed, falling back to patterns: {e}")
-                    # Fallback to pattern-based for this chunk
-                    for p in current_chunk:
-                        category = self.pattern_based_categorize(p)
-                        page_entry = self.prepare_page_for_display(p)
-                        categorized[category].append(page_entry)
+        for section in sections_to_enhance:
+            if section not in categorized or not categorized[section]:
+                continue
                 
-                # Reset chunk
-                current_chunk = []
-                current_tokens = 0
+            logger.info(f"Enhancing {len(categorized[section])} {section} descriptions...")
             
-            current_chunk.append(page)
-            current_tokens += page_tokens
+            pages = categorized[section]
+            enhanced_pages = []
             
-            # Progress logging
-            if (i + 1) % 50 == 0:
-                logger.info(f"Progress: {i + 1}/{len(pages)} pages")
+            # Process in batches of 10
+            for i in range(0, len(pages), 10):
+                batch = pages[i:i+10]
+                
+                prompt = f"""You are optimizing descriptions for AI search engines (ChatGPT, Claude, Perplexity).
+Site: {site_metadata.get('site_title', '')}
+Section: {section}
+
+For each page below, write a 15-25 word description that:
+- States the specific service/solution
+- Includes keywords AI would search for  
+- Mentions the benefit or outcome
+- Is specific, not generic
+
+Pages:
+"""
+                for j, page in enumerate(batch):
+                    prompt += f"\n{j+1}. {page['title']}"
+                    if page.get('description'):
+                        prompt += f"\n   Current: {page['description'][:100]}..."
+                
+                prompt += """
+
+Return ONLY a JSON array with descriptions:
+[{"index": 1, "description": "..."}, {"index": 2, "description": "..."}, ...]
+
+NO other text, NO trailing commas."""
+
+                try:
+                    response = self.client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": "You are an AI search optimization expert. Write descriptions that help AI understand and recommend pages."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.7,
+                        max_tokens=600
+                    )
+                    
+                    content = response.choices[0].message.content.strip()
+                    
+                    # Extract JSON more carefully
+                    # Remove any markdown formatting
+                    content = content.replace('```json', '').replace('```', '')
+                    
+                    # Find the JSON array
+                    start = content.find('[')
+                    end = content.rfind(']') + 1
+                    
+                    if start != -1 and end > start:
+                        json_str = content[start:end]
+                        
+                        # Clean common issues
+                        json_str = re.sub(r',\s*]', ']', json_str)  # Remove trailing commas
+                        json_str = re.sub(r',\s*}', '}', json_str)
+                        
+                        improvements = json.loads(json_str)
+                        
+                        # Create enhanced batch
+                        enhanced_batch = batch.copy()
+                        for item in improvements:
+                            idx = item.get('index', 0) - 1
+                            if 0 <= idx < len(enhanced_batch) and 'description' in item:
+                                enhanced_batch[idx] = batch[idx].copy()
+                                enhanced_batch[idx]['description'] = item['description']
+                        
+                        enhanced_pages.extend(enhanced_batch)
+                        logger.info(f"✓ Enhanced {len(improvements)} descriptions")
+                    else:
+                        # If parsing fails, keep originals
+                        enhanced_pages.extend(batch)
+                        logger.warning("Could not parse GPT response, keeping original descriptions")
+                        
+                except Exception as e:
+                    logger.warning(f"Enhancement failed for batch: {e}")
+                    enhanced_pages.extend(batch)  # Keep originals on error
+            
+            # Update the section with enhanced pages
+            enhanced_categorized[section] = enhanced_pages
         
-        # Process final chunk
-        if current_chunk:
-            try:
-                chunk_results = self.gpt_categorize_batch(current_chunk, site_context)
-                for category, items in chunk_results.items():
-                    categorized[category].extend(items)
-            except Exception as e:
-                logger.error(f"Final GPT chunk failed: {e}")
-                # Fallback for final chunk
-                for p in current_chunk:
-                    category = self.pattern_based_categorize(p)
-                    page_entry = self.prepare_page_for_display(p)
-                    categorized[category].append(page_entry)
-        
-        return dict(categorized)
+        return enhanced_categorized
+    
+    # DEPRECATED METHODS - Left for reference but not used
+    def prepare_page_for_gpt(self, page: Dict) -> Dict:
+        """DEPRECATED - Only used in old GPT categorization"""
+        display_data = self.prepare_page_for_display(page)
+        return {
+            "url": display_data['url'],
+            "title": display_data['title'][:100],
+            "meta": display_data['description'][:150],
+            "h1": page.get("H1-1", "")[:100]
+        }
+    
+    def estimate_tokens(self, pages: List[Dict]) -> int:
+        """DEPRECATED - Only used in old GPT categorization"""
+        simplified = [self.prepare_page_for_gpt(p) for p in pages]
+        content = json.dumps(simplified)
+        return len(self.encoding.encode(content))
+    
+    def gpt_categorize_batch(self, pages: List[Dict], site_context: str = "") -> Dict[str, List[Dict]]:
+        """DEPRECATED - Don't use GPT for categorization"""
+        logger.warning("gpt_categorize_batch is deprecated. Use pattern-based categorization instead.")
+        # Fallback to pattern-based
+        fallback_results = defaultdict(list)
+        for page in pages:
+            category = self.pattern_based_categorize(page)
+            page_entry = self.prepare_page_for_display(page)
+            fallback_results[category].append(page_entry)
+        return dict(fallback_results)
+    
+    def _gpt_categorize_all(self, pages: List[Dict], site_metadata: Dict) -> Dict[str, List[Dict]]:
+        """DEPRECATED - Don't use GPT for categorization"""
+        logger.warning("GPT categorization is deprecated. Using pattern-based categorization instead.")
+        return self._pattern_categorize_all(pages)
