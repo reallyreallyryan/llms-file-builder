@@ -1,0 +1,25 @@
+# Requirements for Mac App Build
+# This ensures all dependencies are bundled correctly
+
+# Core dependencies (from your main requirements.txt)
+pandas==2.0.3
+numpy==1.24.3
+python-dotenv==1.0.0
+openai>=1.0.0
+tiktoken>=0.5.0
+streamlit==1.31.0
+tqdm==4.66.1
+
+# Additional dependencies that PyInstaller needs to bundle
+altair<5
+pillow>=8.0.0
+tornado>=6.0.3
+validators>=0.18.0
+watchdog>=2.1.0
+protobuf>=3.20.0
+pyarrow>=4.0.0
+pydeck>=0.8.0
+click>=8.0.0
+
+# Build tool
+pyinstaller>=6.0.0
