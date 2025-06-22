@@ -1,124 +1,99 @@
-# main.py
-
-import os
 import pandas as pd
-from collections import defaultdict
-from gpt_builder import build_llms_with_gpt
+import os
+import json
 
-EXPORT_DIR = os.path.join(os.path.dirname(__file__), "exports")
+EXPORTS_DIR = "exports"
 
-def classify_section(url: str, title: str = "", description: str = "") -> str:
-    """Smarter classification based on URL, title, and description."""
-    text = f"{url} {title} {description}".lower()
+SECTION_PATTERNS = {
+    "Services": ["services", "therapy", "injection", "prp", "bmac", "treatment", "decompression"],
+    "Areas Treated": ["areas-we-treat", "pain", "sciatica", "shoulder", "hip", "back", "neck"],
+    "Blogs": ["blog", "articles", "education", "/news", "/resources"],
+    "Medical Providers": ["physician", "provider", "doctor", "team", "pa-c", "md", "do"],
+    "Locations": ["locations", "contact", "scottsdale", "mesa", "phoenix", "gilbert"],
+    "Patient Resources": ["forms", "insurance", "download", "privacy", "appointment", "faq"],
+    "About Us": ["about", "mission", "careers", "values"]
+}
 
-    if any(x in text for x in ["provider", "pa-c", "-md", "physiatrist"]):
-        return "Medical Providers"
-    if any(x in text for x in ["prp", "injection", "treatment", "therapy", "bmac", "prolotherapy"]):
-        return "Services"
-    if any(x in text for x in ["knee", "back", "neck", "hip", "shoulder", "sciatica", "pain", "arthritis"]):
-        return "Areas Treated"
-    if any(x in text for x in ["blog", "guide", "understanding", "explained", "how to", "tips", "faq", "insights"]):
-        return "Blogs"
-    if any(x in text for x in ["about", "contact", "locations", "appointment", "insurance", "privacy policy"]):
-        return "General Info"
 
-    return "Other"
+def normalize_url(url):
+    return url.rstrip("/").strip()
 
-def parse_csv(csv_path):
-    df = pd.read_csv(csv_path)
-
-    if df.empty:
-        raise ValueError("CSV file is empty.")
-
-    homepage_row = df.iloc[0]
-    homepage = {
-        "url": str(homepage_row["Address"]).strip(),
-        "title": str(homepage_row["Title 1"]).strip(),
-        "description": str(homepage_row["Meta Description 1"]).strip()
-    }
-
-    pages = []
-    for _, row in df.iloc[1:].iterrows():
-        url = str(row.get("Address", "")).strip()
-        title = str(row.get("Title 1", "")).strip()
-        meta = str(row.get("Meta Description 1", "")).strip()
-        status = str(row.get("Status Code", "")).strip()
-        indexable = str(row.get("Indexability", "")).strip()
-
-        if not url or status != "200" or indexable.lower() != "indexable":
-            continue
-
-        description = meta or title or "No description available."
-        pages.append({
-            "url": url,
-            "title": title,
-            "description": description
-        })
-
-    return homepage, pages
-
-def group_and_write_manually(homepage, pages, output_filename="LLMS.txt"):
-    sections = defaultdict(list)
-
+def deduplicate_pages(pages):
+    seen = set()
+    deduped = []
     for page in pages:
-        section = classify_section(page["url"], page["title"], page["description"])
-        sections[section].append(page)
+        url = normalize_url(page.get("Address", ""))
+        if url not in seen:
+            seen.add(url)
+            deduped.append(page)
+    return deduped
 
-    if not os.path.exists(EXPORT_DIR):
-        os.makedirs(EXPORT_DIR)
+def parse_site_metadata(df):
+    homepage = df.iloc[0]
+    site_title = homepage.get("Title 1", "Website")
+    site_summary = homepage.get("Meta Description 1", "")
+    return site_title.strip(), site_summary.strip()
 
-    path = os.path.join(EXPORT_DIR, output_filename)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(f"# {homepage.get('title', 'Website')}\n\n")
-        f.write(f"{homepage.get('description', 'No description.')}\n\n")
-
-        for section, items in sections.items():
-            f.write(f"## {section}\n")
-            for page in items:
-                title = page["title"] or page["url"]
-                desc = page["description"]
-                f.write(f"- [{title}]({page['url']}): {desc}\n")
-            f.write("\n")
-
-    return path
+def classify_section(url, title):
+    url_lower = url.lower()
+    title_lower = title.lower()
+    for section, patterns in SECTION_PATTERNS.items():
+        for pattern in patterns:
+            if pattern in url_lower or pattern in title_lower:
+                return section
+    return "Other"
 
 def run_tool(input_data: dict) -> dict:
     csv_path = input_data.get("csv_path")
-    use_gpt = input_data.get("use_gpt", False)
 
     if not csv_path or not os.path.exists(csv_path):
-        return {"success": False, "error": "Missing or invalid CSV path."}
+        return {"success": False, "error": "CSV path is missing or invalid."}
 
-    try:
-        homepage, pages = parse_csv(csv_path)
+    df = pd.read_csv(csv_path)
+    df = df[df["Status Code"] == 200]
+    df = df[df["Indexability"] == "Indexable"]
+    df = df.fillna("")
 
-        if use_gpt:
-            content = build_llms_with_gpt(
-                site_title=homepage["title"],
-                homepage_desc=homepage["description"],
-                pages=pages
-            )
+    site_title, site_summary = parse_site_metadata(df)
+    pages = deduplicate_pages(df.to_dict(orient="records"))
 
-            if not os.path.exists(EXPORT_DIR):
-                os.makedirs(EXPORT_DIR)
-            gpt_path = os.path.join(EXPORT_DIR, "LLMS.txt")
-            with open(gpt_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return {
-                "success": True,
-                "file": gpt_path,
-                "generated_by": "gpt",
-                "total_pages": len(pages)
-            }
+    grouped = {}
+    seen_urls = set()
+    for page in pages:
+        url = normalize_url(page.get("Address", ""))
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        title = page.get("Title 1", "Untitled").strip()
+        desc = page.get("Meta Description 1", "").strip()
+        section = classify_section(url, title)
+        grouped.setdefault(section, []).append({
+            "url": url,
+            "title": title,
+            "description": desc
+        })
 
-        else:
-            manual_path = group_and_write_manually(homepage, pages)
-            return {
-                "success": True,
-                "file": manual_path,
-                "generated_by": "manual",
-                "total_pages": len(pages)
-            }
+    txt_lines = [f"# {site_title}", "", site_summary, ""]
+    for section, section_pages in grouped.items():
+        txt_lines.append(f"## {section}\n")
+        for page in section_pages:
+            txt_lines.append(f"- [{page['title']}]({page['url']}): {page['description']}")
+        txt_lines.append("")
 
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    os.makedirs(EXPORTS_DIR, exist_ok=True)
+    txt_path = os.path.join(EXPORTS_DIR, "LLMS.txt")
+    json_path = os.path.join(EXPORTS_DIR, "LLMS.json")
+
+    with open(txt_path, "w") as f:
+        f.write("\n".join(txt_lines))
+
+    with open(json_path, "w") as f:
+        json.dump(grouped, f, indent=2)
+
+    return {
+        "success": True,
+        "file": txt_path,
+        "json": json_path,
+        "section_count": len(grouped),
+        "total_pages": len(seen_urls)
+    }

@@ -1,59 +1,87 @@
-# gpt_builder.py (Chunked GPT Processing)
-
-import os
 import json
+import tiktoken
 from openai import OpenAI
 from dotenv import load_dotenv
-from math import ceil
+import os
 
 load_dotenv()
+
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-CHUNK_SIZE = 50  # safe number for GPT-4 token limits
+def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
+    encoding = tiktoken.encoding_for_model(model)
+    tokens_per_message = 3
+    tokens_per_name = 1
+    num_tokens = 0
+    for message in messages:
+        num_tokens += tokens_per_message
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+            if key == "name":
+                num_tokens += tokens_per_name
+    num_tokens += 3
+    return num_tokens
 
-def _build_prompt(site_title, homepage_desc, pages_chunk):
-    return {
-        "site": {
-            "title": site_title,
-            "homepage_description": homepage_desc
-        },
-        "pages": pages_chunk
-    }
+def build_llms_with_gpt(pages: list, site_name: str, summary: str, chunk_size: int = 60):
+    if not pages:
+        return {"success": False, "error": "No pages to process."}
 
-def _send_chunk_to_gpt(prompt_data):
-    system_prompt = (
-        "You are a skilled SEO assistant.\n"
-        "You will receive a website title, description, and a list of pages with URLs and short descriptions.\n"
-        "Group the pages into smart, relevant categories (e.g., Services, Areas Treated, Providers, Blogs, General Info).\n"
-        "Return only the markdown-formatted LLMS sections for these pages.\n"
-        "Do not repeat the site title or homepage summary."
-    )
-
-    user_prompt = f"Generate LLMS-style markdown for this chunk:\n{json.dumps(prompt_data, indent=2)}"
-
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.3
-    )
-
-    return response.choices[0].message.content.strip()
-
-def build_llms_with_gpt(site_title, homepage_desc, pages):
-    all_chunks = [pages[i:i + CHUNK_SIZE] for i in range(0, len(pages), CHUNK_SIZE)]
+    all_chunks = [pages[i:i + chunk_size] for i in range(0, len(pages), chunk_size)]
     print(f"Sending {len(all_chunks)} GPT batches...")
 
-    llms_sections = []
+    section_data = {}
 
     for i, chunk in enumerate(all_chunks):
-        prompt = _build_prompt(site_title, homepage_desc, chunk)
         print(f"Processing chunk {i + 1} of {len(all_chunks)}...")
-        section_md = _send_chunk_to_gpt(prompt)
-        llms_sections.append(section_md)
+        simplified = [
+            {
+                "title": p.get("Title", ""),
+                "url": p.get("Address", ""),
+                "meta": p.get("Meta Description", "")
+            }
+            for p in chunk
+        ]
 
-    # Final combined markdown
-    full_output = f"# {site_title}\n\n{homepage_desc}\n\n" + "\n\n".join(llms_sections)
-    return full_output
+        prompt = f"""
+You are helping organize web pages for AI search.
+
+Group the following pages into sections. Use these standard ones when applicable:
+- Services
+- Areas Treated
+- Providers
+- Locations
+- Blog
+
+Write 1-2 sentence descriptions for each URL that help AI search understand what the page offers. 
+
+Only use the info in the title, meta, or url. If unsure, group under "Other".
+
+Respond in JSON with section names as keys.
+
+Input:
+{json.dumps(simplified)}
+"""
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            content = response.choices[0].message.content
+            gpt_sections = json.loads(content)
+
+            for section, pages in gpt_sections.items():
+                if section not in section_data:
+                    section_data[section] = []
+                section_data[section].extend(pages)
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    return {
+        "success": True,
+        "site_title": site_name,
+        "site_summary": summary,
+        "sections": section_data
+    }
