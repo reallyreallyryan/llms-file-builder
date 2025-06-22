@@ -133,6 +133,19 @@ class Categorizer:
         
         # Get description, fallback to H1 or generate from URL
         description = page.get('Meta Description 1', '').strip()
+        
+        # Clean up truncation marks from descriptions
+        if description:
+            # Remove various forms of truncation marks
+            description = description.replace('[…]', '').replace('[...]', '').strip()
+            description = description.replace('…', '').strip()
+            
+            # If description ends with incomplete sentence, try to complete it
+            if description and not description[-1] in '.!?':
+                # Add a period if it seems like a complete thought
+                if len(description.split()) > 5:  # Has enough words
+                    description += '.'
+        
         if not description:
             h1 = page.get('H1-1', '').strip()
             if h1:
@@ -251,8 +264,8 @@ class Categorizer:
                                          site_metadata: Dict) -> Dict[str, List[Dict]]:
         """Enhance descriptions for already-categorized pages"""
         
-        # Only enhance high-value sections
-        sections_to_enhance = ['Services', 'Providers', 'Locations']
+        # Include Blog in sections to enhance
+        sections_to_enhance = ['Services', 'Providers', 'Locations', 'Blog']
         enhanced_categorized = categorized.copy()
         
         for section in sections_to_enhance:
@@ -268,11 +281,25 @@ class Categorizer:
             for i in range(0, len(pages), 10):
                 batch = pages[i:i+10]
                 
-                prompt = f"""You are optimizing descriptions for AI search engines (ChatGPT, Claude, Perplexity).
+                # Different prompt for Blog section
+                if section == 'Blog':
+                    prompt = f"""You are optimizing blog descriptions for AI search engines (ChatGPT, Claude, Perplexity).
+Site: {site_metadata.get('site_title', '')}
+
+For each blog post below, write a 15-25 word description for an llms.txt file that. Each file should:
+- Clearly states what the article teaches or covers
+- Uses natural, complete sentences (no truncation marks like [...])
+- Helps AI understand the content's value
+- Is actionable and informative
+
+Blog posts:
+"""
+                else:
+                    prompt = f"""You are optimizing descriptions for AI search engines (ChatGPT, Claude, Perplexity).
 Site: {site_metadata.get('site_title', '')}
 Section: {section}
 
-For each page below, write a 15-25 word description that:
+For each page below, write a 15-25 word description for a llms.txt file. Each file should:
 - States the specific service/solution
 - Includes keywords AI would search for  
 - Mentions the benefit or outcome
@@ -280,23 +307,26 @@ For each page below, write a 15-25 word description that:
 
 Pages:
 """
+                
                 for j, page in enumerate(batch):
                     prompt += f"\n{j+1}. {page['title']}"
                     if page.get('description'):
-                        prompt += f"\n   Current: {page['description'][:100]}..."
+                        # Clean up [...] from existing descriptions before sending to GPT
+                        current_desc = page['description'].replace('[…]', '').replace('[...]', '').replace('…', '').strip()
+                        prompt += f"\n   Current: {current_desc[:100]}"
                 
                 prompt += """
 
 Return ONLY a JSON array with descriptions:
 [{"index": 1, "description": "..."}, {"index": 2, "description": "..."}, ...]
 
-NO other text, NO trailing commas."""
+NO other text, NO trailing commas, NO truncation marks."""
 
                 try:
                     response = self.client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
-                            {"role": "system", "content": "You are an AI search optimization expert. Write descriptions that help AI understand and recommend pages."},
+                            {"role": "system", "content": "You are an AI search optimization expert. Write complete, natural descriptions without truncation marks."},
                             {"role": "user", "content": prompt}
                         ],
                         temperature=0.7,

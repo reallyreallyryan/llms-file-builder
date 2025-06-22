@@ -50,35 +50,15 @@ class LLMSGenerator:
             lines.append(f"<!-- Total pages: {total_pages} -->")
             lines.append("")
         
-        # Categories and pages
-        for category, pages in categorized_pages.items():
-            if not pages:  # Skip empty categories
-                continue
+        # Categories and pages - First, add categories in the defined order
+        for category in self.CATEGORY_ORDER:
+            if category in categorized_pages and categorized_pages[category]:
+                pages = categorized_pages[category]
                 
-            lines.append(f"## {category}")
-            lines.append("")
-            
-            # Sort pages by title for consistency
-            sorted_pages = sorted(pages, key=lambda x: x.get('title', ''))
-            
-            for page in sorted_pages:
-                url = page.get('url', '')
-                title = page.get('title', 'Untitled')
-                description = page.get('description', '')
-                
-                # Format the line
-                if description:
-                    lines.append(f"- [{title}]({url}): {description}")
-                else:
-                    lines.append(f"- [{title}]({url})")
-            
-            lines.append("")  # Empty line after each section
-        
-        for category, pages in categorized_pages.items():
-            if category not in self.CATEGORY_ORDER and pages:
                 lines.append(f"## {category}")
                 lines.append("")
                 
+                # Sort pages by title for consistency
                 sorted_pages = sorted(pages, key=lambda x: x.get('title', ''))
                 
                 for page in sorted_pages:
@@ -86,13 +66,15 @@ class LLMSGenerator:
                     title = page.get('title', 'Untitled')
                     description = page.get('description', '')
                     
+                    # Format the line
                     if description:
                         lines.append(f"- [{title}]({url}): {description}")
                     else:
                         lines.append(f"- [{title}]({url})")
                 
-                lines.append("")
+                lines.append("")  # Empty line after each section
         
+        # Then add any categories not in CATEGORY_ORDER (like "Other")
         for category, pages in categorized_pages.items():
             if category not in self.CATEGORY_ORDER and pages:
                 lines.append(f"## {category}")
