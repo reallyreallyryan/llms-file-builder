@@ -11,19 +11,6 @@ import tiktoken
 from openai import OpenAI
 import os
 
-# backend/categorizer.py
-"""
-Handles page categorization using pattern matching and AI
-"""
-import re
-import json
-import logging
-from typing import Dict, List, Optional
-from collections import defaultdict
-import tiktoken
-from openai import OpenAI
-import os
-
 logger = logging.getLogger(__name__)
 
 class Categorizer:
@@ -245,10 +232,10 @@ class Categorizer:
         logger.info("Using pattern-based categorization...")
         categorized = self._pattern_categorize_all(pages)
         
-        # If GPT is enabled, use it for title AND description enhancement
+        # If GPT is enabled, use it ONLY for description enhancement
         if self.use_gpt:
-            logger.info("Enhancing titles and descriptions with GPT...")
-            categorized = self._enhance_categorized_content(categorized, site_metadata)
+            logger.info("Enhancing descriptions with GPT...")
+            categorized = self._enhance_categorized_descriptions(categorized, site_metadata)
         
         return categorized
     
@@ -273,9 +260,9 @@ class Categorizer:
         
         return sorted_categories
     
-    def _enhance_categorized_content(self, categorized: Dict[str, List[Dict]], 
-                                   site_metadata: Dict) -> Dict[str, List[Dict]]:
-        """Enhance both titles and descriptions for already-categorized pages"""
+    def _enhance_categorized_descriptions(self, categorized: Dict[str, List[Dict]], 
+                                         site_metadata: Dict) -> Dict[str, List[Dict]]:
+        """Enhance descriptions for already-categorized pages"""
         
         # Include Blog in sections to enhance
         sections_to_enhance = ['Services', 'Providers', 'Locations', 'Blog']
@@ -285,7 +272,7 @@ class Categorizer:
             if section not in categorized or not categorized[section]:
                 continue
                 
-            logger.info(f"Enhancing {len(categorized[section])} {section} titles and descriptions...")
+            logger.info(f"Enhancing {len(categorized[section])} {section} descriptions...")
             
             pages = categorized[section]
             enhanced_pages = []
@@ -296,60 +283,42 @@ class Categorizer:
                 
                 # Different prompt for Blog section
                 if section == 'Blog':
-                    prompt = f"""You are optimizing blog content for AI search engines (ChatGPT, Claude, Perplexity) and LLMS.txt files.
+                    prompt = f"""You are optimizing blog descriptions for AI search engines (ChatGPT, Claude, Perplexity).
 Site: {site_metadata.get('site_title', '')}
 
-For each blog post below, provide an optimized title and description. 
-
-TITLE requirements:
-- Clear, descriptive, and specific about what the article covers
-- Optimized for AI search understanding
-- Concise but informative (under 60 characters when possible)
-- Remove generic words like "Blog |" or site branding
-
-DESCRIPTION requirements:
-- 15-25 words explaining what readers will learn
-- Uses natural, complete sentences (no truncation marks)
-- Actionable and informative
+For each blog post below, write a 15-25 word description for an llms.txt file that. Each file should:
+- Clearly states what the article teaches or covers
+- Uses natural, complete sentences (no truncation marks like [...])
+- Helps AI understand the content's value
+- Is actionable and informative
 
 Blog posts:
 """
                 else:
-                    prompt = f"""You are optimizing content for AI search engines (ChatGPT, Claude, Perplexity) and LLMS.txt files.
+                    prompt = f"""You are optimizing descriptions for AI search engines (ChatGPT, Claude, Perplexity).
 Site: {site_metadata.get('site_title', '')}
 Section: {section}
 
-For each page below, provide an optimized title and description.
-
-TITLE requirements:
-- Clear and specific about the service/solution offered
-- Optimized for AI search understanding  
-- Concise but descriptive (under 60 characters when possible)
-- Remove generic site branding or unnecessary words
-
-DESCRIPTION requirements:
-- 15-25 words stating the specific benefit or outcome
-- Includes keywords AI would search for
-- Specific, not generic
+For each page below, write a 15-25 word description for a llms.txt file. Each file should:
+- States the specific service/solution
+- Includes keywords AI would search for  
+- Mentions the benefit or outcome
+- Is specific, not generic
 
 Pages:
 """
                 
                 for j, page in enumerate(batch):
-                    current_title = page['title']
-                    current_desc = page.get('description', '')
-                    
-                    # Clean up [...] from existing descriptions before sending to GPT
-                    if current_desc:
-                        current_desc = current_desc.replace('[…]', '').replace('[...]', '').replace('…', '').strip()
-                    
-                    prompt += f"\n{j+1}. Current Title: {current_title}"
-                    prompt += f"\n   Current Description: {current_desc[:100] if current_desc else 'None'}"
-                    prompt += f"\n   URL: {page['url']}\n"
+                    prompt += f"\n{j+1}. {page['title']}"
+                    if page.get('description'):
+                        # Clean up [...] from existing descriptions before sending to GPT
+                        current_desc = page['description'].replace('[…]', '').replace('[...]', '').replace('…', '').strip()
+                        prompt += f"\n   Current: {current_desc[:100]}"
                 
                 prompt += """
-Return ONLY a JSON array with enhanced titles and descriptions:
-[{"index": 1, "title": "...", "description": "..."}, {"index": 2, "title": "...", "description": "..."}, ...]
+
+Return ONLY a JSON array with descriptions:
+[{"index": 1, "description": "..."}, {"index": 2, "description": "..."}, ...]
 
 NO other text, NO trailing commas, NO truncation marks."""
 
@@ -357,11 +326,11 @@ NO other text, NO trailing commas, NO truncation marks."""
                     response = self.client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
-                            {"role": "system", "content": "You are an AI search optimization expert. Write complete, natural titles and descriptions without truncation marks."},
+                            {"role": "system", "content": "You are an AI search optimization expert. Write complete, natural descriptions without truncation marks."},
                             {"role": "user", "content": prompt}
                         ],
                         temperature=0.7,
-                        max_tokens=800
+                        max_tokens=600
                     )
                     
                     content = response.choices[0].message.content.strip()
@@ -387,21 +356,16 @@ NO other text, NO trailing commas, NO truncation marks."""
                         enhanced_batch = batch.copy()
                         for item in improvements:
                             idx = item.get('index', 0) - 1
-                            if 0 <= idx < len(enhanced_batch):
+                            if 0 <= idx < len(enhanced_batch) and 'description' in item:
                                 enhanced_batch[idx] = batch[idx].copy()
-                                # Update title if provided
-                                if 'title' in item and item['title']:
-                                    enhanced_batch[idx]['title'] = item['title']
-                                # Update description if provided
-                                if 'description' in item and item['description']:
-                                    enhanced_batch[idx]['description'] = item['description']
+                                enhanced_batch[idx]['description'] = item['description']
                         
                         enhanced_pages.extend(enhanced_batch)
-                        logger.info(f"✓ Enhanced {len(improvements)} titles and descriptions")
+                        logger.info(f"✓ Enhanced {len(improvements)} descriptions")
                     else:
                         # If parsing fails, keep originals
                         enhanced_pages.extend(batch)
-                        logger.warning("Could not parse GPT response, keeping original content")
+                        logger.warning("Could not parse GPT response, keeping original descriptions")
                         
                 except Exception as e:
                     logger.warning(f"Enhancement failed for batch: {e}")
@@ -444,9 +408,3 @@ NO other text, NO trailing commas, NO truncation marks."""
         """DEPRECATED - Don't use GPT for categorization"""
         logger.warning("GPT categorization is deprecated. Using pattern-based categorization instead.")
         return self._pattern_categorize_all(pages)
-
-    # BACKWARD COMPATIBILITY - Keep old method name
-    def _enhance_categorized_descriptions(self, categorized: Dict[str, List[Dict]], 
-                                         site_metadata: Dict) -> Dict[str, List[Dict]]:
-        """DEPRECATED - Use _enhance_categorized_content instead"""
-        return self._enhance_categorized_content(categorized, site_metadata)

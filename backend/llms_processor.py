@@ -43,7 +43,8 @@ class LLMSProcessor:
     def process_file(self, 
                     csv_path: str,
                     preview_only: bool = False,
-                    custom_filename: Optional[str] = None) -> Dict:
+                    custom_filename: Optional[str] = None,
+                    force_processing: bool = False) -> Dict:
         """
         Main processing pipeline
         
@@ -51,6 +52,7 @@ class LLMSProcessor:
             csv_path: Path to Screaming Frog CSV
             preview_only: If True, only generate preview without saving
             custom_filename: Custom output filename (without extension)
+            force_processing: If True, process even with quality issues
             
         Returns:
             Dictionary with results and status
@@ -147,6 +149,10 @@ class LLMSProcessor:
                     'available_columns': list(processor.df.columns)
                 }
             
+            # Get quality analysis
+            analysis = processor.analyze_csv_quality(processor.df)
+            export_advice = processor.generate_export_advice(analysis)
+            
             # Get info
             col_info = processor.get_column_info()
             
@@ -154,7 +160,9 @@ class LLMSProcessor:
                 'valid': True,
                 'total_rows': len(processor.df),
                 'columns': col_info,
-                'file_size_mb': Path(csv_path).stat().st_size / (1024 * 1024)
+                'file_size_mb': Path(csv_path).stat().st_size / (1024 * 1024),
+                'analysis': analysis,
+                'export_advice': export_advice
             }
             
         except Exception as e:
