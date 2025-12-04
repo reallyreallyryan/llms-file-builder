@@ -1,6 +1,7 @@
-# backend/llms_generator.py
+
 """
 Generates LLMS.txt files following the specification
+OPTIMIZED for healthcare marketing sites
 """
 import os
 import json
@@ -18,11 +19,14 @@ class LLMSGenerator:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
+    # Optimized category order for healthcare marketing sites
     CATEGORY_ORDER = [
         "About",           # Site context first
-        "Services",        # Core offerings
+        "Services",        # Core offerings - most important for healthcare
         "Providers",       # Who performs services
+        "Areas Treated",   # What conditions are treated
         "Locations",       # Where to get services
+        "Before & After",  # Visual proof/results 
         "Patient Resources", # Supporting info
         "Blog"             # Educational content last
     ]
@@ -31,7 +35,7 @@ class LLMSGenerator:
                          site_metadata: Dict,
                          categorized_pages: Dict[str, List[Dict]],
                          include_stats: bool = True) -> str:
-        """Generate the LLMS.txt markdown content"""
+        """Generate the LLMS.txt markdown content optimized for healthcare"""
         lines = []
         
         # Header
@@ -50,7 +54,7 @@ class LLMSGenerator:
             lines.append(f"<!-- Total pages: {total_pages} -->")
             lines.append("")
         
-        # Categories and pages - First, add categories in the defined order
+        # Categories and pages - Use healthcare-optimized order
         for category in self.CATEGORY_ORDER:
             if category in categorized_pages and categorized_pages[category]:
                 pages = categorized_pages[category]
@@ -58,8 +62,8 @@ class LLMSGenerator:
                 lines.append(f"## {category}")
                 lines.append("")
                 
-                # Sort pages by title for consistency
-                sorted_pages = sorted(pages, key=lambda x: x.get('title', ''))
+                # Sort pages by title for consistency, but prioritize important ones
+                sorted_pages = self._sort_pages_for_category(category, pages)
                 
                 for page in sorted_pages:
                     url = page.get('url', '')
@@ -96,56 +100,56 @@ class LLMSGenerator:
         
         return '\n'.join(lines)
     
-    def generate_json(self,
-                     site_metadata: Dict,
-                     categorized_pages: Dict[str, List[Dict]],
-                     stats: Optional[Dict] = None) -> Dict:
-        """Generate JSON version of the LLMS data"""
-        # Convert any numpy/pandas types to Python native types
-        def convert_to_serializable(obj):
-            """Convert numpy/pandas types to Python native types"""
-            try:
-                import numpy as np
-                import pandas as pd
-                
-                if isinstance(obj, (np.integer, np.int64)):
-                    return int(obj)
-                elif isinstance(obj, (np.floating, np.float64)):
-                    return float(obj)
-                elif isinstance(obj, np.ndarray):
-                    return obj.tolist()
-                elif isinstance(obj, pd.Series):
-                    return obj.tolist()
-            except ImportError:
-                pass
+    def _sort_pages_for_category(self, category: str, pages: List[Dict]) -> List[Dict]:
+        """Sort pages within each category for optimal presentation"""
+        
+        if category == "Services":
+            # Put main services first, then specific procedures
+            def service_priority(page):
+                title = page.get('title', '').lower()
+                if any(term in title for term in ['breast reconstruction', 'breast surgery', 'cosmetic surgery']):
+                    return 0  # Main services first
+                elif any(term in title for term in ['diep', 'tram', 'implant']):
+                    return 1  # Specific procedures second
+                else:
+                    return 2  # Everything else
             
-            # Handle regular Python types
-            if hasattr(obj, 'item'):  # numpy scalar
-                return obj.item()
-            elif isinstance(obj, dict):
-                return {k: convert_to_serializable(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_to_serializable(item) for item in obj]
-            else:
-                return obj
+            return sorted(pages, key=lambda x: (service_priority(x), x.get('title', '')))
         
-        # Clean stats to ensure JSON serializable
-        clean_stats = convert_to_serializable(stats) if stats else {}
+        elif category == "Before & After":
+            # Group by procedure type
+            def before_after_priority(page):
+                title = page.get('title', '').lower()
+                if 'breast reconstruction' in title:
+                    return 0
+                elif 'breast' in title:
+                    return 1
+                elif any(term in title for term in ['diep', 'flap']):
+                    return 2
+                else:
+                    return 3
+            
+            return sorted(pages, key=lambda x: (before_after_priority(x), x.get('title', '')))
         
-        return {
-            "metadata": {
-                "site_title": site_metadata.get('site_title', ''),
-                "site_summary": site_metadata.get('site_summary', ''),
-                "site_url": site_metadata.get('site_url', ''),
-                "generated_at": datetime.now().isoformat(),
-                "version": "1.0"
-            },
-            "sections": categorized_pages,
-            "stats": clean_stats
-        }
+        elif category == "Blog":
+            # Put recent achievements and milestones first
+            def blog_priority(page):
+                title = page.get('title', '').lower()
+                if any(term in title for term in ['milestone', 'achievement', 'record', 'years of']):
+                    return 0  # Achievements first
+                elif any(term in title for term in ['news', 'announcement', 'featured']):
+                    return 1  # News second
+                else:
+                    return 2  # Regular blog content
+            
+            return sorted(pages, key=lambda x: (blog_priority(x), x.get('title', '')))
+        
+        else:
+            # Default alphabetical sort for other categories
+            return sorted(pages, key=lambda x: x.get('title', ''))
     
     def validate_output(self, content: str) -> List[str]:
-        """Validate the generated LLMS.txt content"""
+        """Validate the generated LLMS.txt content with healthcare-specific checks"""
         issues = []
         lines = content.split('\n')
         
@@ -172,6 +176,11 @@ class LLMSGenerator:
         if link_count == 0:
             issues.append("No links found in output")
         
+        # Healthcare-specific validations
+        services_found = any('## Services' in line for line in lines)
+        if not services_found:
+            issues.append("No Services section found - critical for healthcare sites")
+        
         # Check for reasonable length
         if len(content) < 100:
             issues.append("Output seems too short")
@@ -183,33 +192,26 @@ class LLMSGenerator:
                   categorized_pages: Dict[str, List[Dict]],
                   stats: Optional[Dict] = None,
                   filename_prefix: str = "LLMS") -> Dict[str, str]:
-        """Save both LLMS.txt and LLMS.json files"""
+        """Save LLMS.txt file optimized for AI search engines"""
         # Generate content
         markdown_content = self.generate_markdown(site_metadata, categorized_pages)
-        json_content = self.generate_json(site_metadata, categorized_pages, stats)
         
         # Validate markdown
         issues = self.validate_output(markdown_content)
         if issues:
             logger.warning(f"Validation issues found: {', '.join(issues)}")
         
-        # Save files
+        # Save file
         txt_path = os.path.join(self.output_dir, f"{filename_prefix}.txt")
-        json_path = os.path.join(self.output_dir, f"{filename_prefix}.json")
         
         # Write markdown
         with open(txt_path, 'w', encoding='utf-8') as f:
             f.write(markdown_content)
         
-        # Write JSON
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(json_content, f, indent=2, ensure_ascii=False)
-        
-        logger.info(f"Files saved: {txt_path}, {json_path}")
+        logger.info(f"LLMS.txt file saved: {txt_path}")
         
         return {
             'txt_path': txt_path,
-            'json_path': json_path,
             'validation_issues': issues
         }
     

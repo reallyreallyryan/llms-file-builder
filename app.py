@@ -36,23 +36,18 @@ st.markdown("Convert your Screaming Frog SEO crawl into an AI-optimized LLMS.txt
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # AI Enhancement checkbox - CHECKED BY DEFAULT
-    use_gpt = st.checkbox(
-        "✨ Enhance with AI", 
-        value=True,  # This makes it checked by default
-        help="Use GPT-3.5 to optimize descriptions for AI search engines (ChatGPT, Claude, Perplexity)"
-    )
+    # AI Enhancement is now mandatory - just check for API key
+    st.info("✨ AI optimization is enabled for all LLMS.txt files")
     
-    if use_gpt:
-        # Check for API key
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            st.warning("⚠️ OpenAI API key not found in .env file")
-            api_key = st.text_input("Enter OpenAI API Key:", type="password")
-            if api_key:
-                os.environ["OPENAI_API_KEY"] = api_key
-        else:
-            st.success("✅ OpenAI API key loaded")
+    # Check for API key
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        st.warning("⚠️ OpenAI API key not found in .env file")
+        api_key = st.text_input("Enter OpenAI API Key:", type="password")
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
+    else:
+        st.success("✅ OpenAI API key loaded")
     
     st.divider()
     
@@ -108,7 +103,7 @@ with col1:
             # Validate button
             if st.button("🔍 Validate & Process", type="primary"):
                 with st.spinner("Validating CSV..."):
-                    processor = LLMSProcessor(use_gpt=use_gpt)
+                    processor = LLMSProcessor(api_key=os.getenv("OPENAI_API_KEY"))  # AI enhancement is always on
                     validation = processor.validate_csv(tmp_path)
                     
                     if validation['valid']:
@@ -133,7 +128,7 @@ with col1:
                                         st.write(f"• {issue}")
                         
                         # Process the file
-                        with st.spinner("Processing pages..." + (" and enhancing with AI..." if use_gpt else "")):
+                        with st.spinner("Processing pages and enhancing with AI..."):
                             result = processor.process_file(
                                 tmp_path,
                                 custom_filename=custom_filename or "LLMS"
@@ -188,32 +183,20 @@ with col2:
         # Download buttons
         st.subheader("💾 Download Files")
         
-        # Read the generated files
+        # Read the generated file
         txt_path = result['files']['txt_path']
-        json_path = result['files']['json_path']
         
         with open(txt_path, 'r') as f:
             txt_content = f.read()
-        with open(json_path, 'r') as f:
-            json_content = f.read()
         
-        col_dl1, col_dl2 = st.columns(2)
-        with col_dl1:
-            st.download_button(
-                label="📄 Download LLMS.txt",
-                data=txt_content,
-                file_name=f"{custom_filename or 'LLMS'}.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
-        with col_dl2:
-            st.download_button(
-                label="📊 Download LLMS.json",
-                data=json_content,
-                file_name=f"{custom_filename or 'LLMS'}.json",
-                mime="application/json",
-                use_container_width=True
-            )
+        # Single download button for LLMS.txt only
+        st.download_button(
+            label="📄 Download LLMS.txt",
+            data=txt_content,
+            file_name=f"{custom_filename or 'LLMS'}.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
         
         # Preview
         with st.expander("👁️ Preview LLMS.txt", expanded=False):

@@ -8,7 +8,7 @@
 
 ## 🎯 Why LLMS.txt?
 
-AI search engines are increasingly used for finding businesses and services. An LLMS.txt file helps these AI systems understand your website's structure and content, similar to how robots.txt helps traditional search engines. This tool automates the creation of these files from your existing SEO crawl data.
+AI search engines are increasingly used for finding businesses and services. An LLMS.txt file helps these AI systems understand your website's structure and content, similar to how robots.txt helps traditional search engines. This tool automates the creation of these files from your existing SEO crawl data, with built-in AI optimization for maximum discoverability.
 
 ## 🏗️ Architecture
 
@@ -24,22 +24,17 @@ graph TB
         C -->|Invalid| E[Error + Advice]
         D --> F[Deduplication]
         F --> G[Pattern-based Categorizer]
-        G --> H{Use GPT?}
-        H -->|Yes| I[GPT Description Enhancer]
-        H -->|No| J[Keep Original Descriptions]
-        I --> K[LLMS Generator]
-        J --> K
+        G --> H[AI Content Optimizer]
+        H --> I[LLMS Generator]
     end
     
     subgraph "Output"
-        K --> L[LLMS.txt]
-        K --> M[LLMS.json]
+        I --> L[LLMS.txt]
         L --> N[AI Search Engines]
     end
     
     style A fill:#e1f5fe
     style L fill:#c8e6c9
-    style M fill:#c8e6c9
     style N fill:#fff3e0
 ```
 
@@ -48,8 +43,8 @@ graph TB
 | Component | Purpose | Key Features |
 |-----------|---------|--------------|
 | **CSV Processor** | Validates and cleans Screaming Frog exports | • Filters non-content pages<br>• Quality scoring<br>• Duplicate removal |
-| **Categorizer** | Groups pages into logical sections | • Pattern-based matching<br>• Medical/healthcare focus<br>• GPT enhancement option |
-| **LLMS Generator** | Creates final output files | • Markdown formatting<br>• JSON structure<br>• Validation |
+| **Categorizer** | Groups pages into logical sections | • Pattern-based matching<br>• Medical/healthcare focus<br>• Built-in AI enhancement |
+| **LLMS Generator** | Creates final output file | • Markdown formatting<br>• AI-optimized content<br>• Validation |
 | **Streamlit App** | User-friendly interface | • Drag-and-drop upload<br>• Real-time preview<br>• Quality analysis |
 
 ## 🚀 Quick Start
@@ -101,11 +96,8 @@ cp .env.example .env
 #### Option A: Command Line Interface
 
 ```bash
-# Basic usage (pattern-based categorization)
+# Basic usage (includes AI optimization)
 python run.py data/your-crawl.csv
-
-# With AI-enhanced descriptions
-python run.py data/your-crawl.csv --use-gpt
 
 # Preview without saving
 python run.py data/your-crawl.csv --preview
@@ -180,35 +172,15 @@ categorizer.update_patterns(CUSTOM_PATTERNS)
 - [Article Title](https://site.com/blog/article): Key insights and topics covered
 ```
 
-### LLMS.json Structure
 
-```json
-{
-  "metadata": {
-    "site_title": "Your Site Name",
-    "site_summary": "Brief description",
-    "generated_at": "2024-01-20T10:30:00Z"
-  },
-  "sections": {
-    "Services": [
-      {
-        "url": "https://site.com/service",
-        "title": "Service Name",
-        "description": "AI-optimized description"
-      }
-    ]
-  }
-}
-```
+## 🤖 Built-in AI Enhancement
 
-## 🤖 AI Enhancement
+The tool automatically:
 
-When using the `--use-gpt` flag, the tool:
-
-1. **Preserves** your accurate pattern-based categorization
-2. **Enhances** descriptions for better AI search visibility
-3. **Optimizes** for specific search intents
-4. **Maintains** factual accuracy while improving clarity
+1. **Preserves** accurate pattern-based categorization
+2. **Enhances** titles and descriptions for AI search visibility
+3. **Optimizes** content specifically for LLMS.txt format
+4. **Maximizes** discoverability in ChatGPT, Claude, Perplexity, and other AI search engines
 
 ### GPT Optimization Focus
 
@@ -242,10 +214,9 @@ The tool includes comprehensive quality checks:
 ```python
 from backend import LLMSProcessor
 
-# Initialize processor
+# Initialize processor with built-in AI optimization
 processor = LLMSProcessor(
     output_dir="exports",
-    use_gpt=True,
     api_key="your-api-key"  # Optional, uses env var by default
 )
 
@@ -260,8 +231,7 @@ result = processor.process_file(
 {
     "success": True,
     "files": {
-        "txt_path": "exports/mysite.txt",
-        "json_path": "exports/mysite.json"
+        "txt_path": "exports/mysite.txt"
     },
     "stats": {
         "total_rows": 500,
@@ -281,8 +251,8 @@ result = processor.process_file(
 ```python
 from backend import Categorizer
 
-# Custom categorization
-categorizer = Categorizer(use_gpt=False)
+# Categorization with built-in AI optimization
+categorizer = Categorizer()  # AI enhancement is always enabled
 categorizer.update_patterns({
     "Custom Category": ["pattern1", "pattern2"]
 })

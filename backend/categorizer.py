@@ -1,19 +1,7 @@
 # backend/categorizer.py
 """
 Handles page categorization using pattern matching and AI
-"""
-import re
-import json
-import logging
-from typing import Dict, List, Optional
-from collections import defaultdict
-import tiktoken
-from openai import OpenAI
-import os
-
-# backend/categorizer.py
-"""
-Handles page categorization using pattern matching and AI
+ENHANCED for healthcare marketing agency sites
 """
 import re
 import json
@@ -27,29 +15,45 @@ import os
 logger = logging.getLogger(__name__)
 
 class Categorizer:
-    """Categorize pages using patterns or GPT"""
+    """Categorize pages using patterns or GPT - Enhanced for Healthcare"""
     
-    # Default section patterns for pattern-based categorization
+    # Enhanced patterns for healthcare marketing sites
     DEFAULT_PATTERNS = {
         "Services": [
             "services", "therapy", "treatment", "procedure", "injection", 
             "prp", "bmac", "decompression", "ablation", "stimulation",
-            "surgery", "surgical", "operation", "removal", "repair"
+            "surgery", "surgical", "operation", "removal", "repair",
+            "cosmetic-surgery", "breast-reconstruction", "lymphedema-surgery",
+            "reconstruction", "mastectomy", "augmentation", "reduction"
         ],
         "Areas Treated": [
             "areas-we-treat", "conditions", "pain", "sciatica", "shoulder", 
             "hip", "back", "neck", "knee", "ankle", "elbow", "spine",
             "joint", "muscle", "tendon", "ligament"
         ],
+        "Before & After": [
+            "before-and-after", "before-after", "results", "gallery", 
+            "transformation", "photos", "high-definition", "before & after",
+            "patient-results", "surgical-results", "before-after"
+        ],
         "Blog": [
+            # Original blog patterns
             "blog", "article", "post", "news", "education", "learn",
             "guide", "tips", "advice", "resource", "insights", "update",
-            "announcement", "opens", "featured", "q&a", "interview" 
+            "announcement", "opens", "featured", "q&a", "interview",
+            
+            # Healthcare-specific blog indicators  
+            "milestone", "achievement", "celebration", "anniversary", 
+            "years-of", "record-breaking", "performs", "completes",
+            "reaches", "celebrates", "awarded", "recognition",
+            "study", "research", "findings", "breakthrough",
+            "spotlight", "featured-in", "named", "honored",
+            "expansion", "expands", "offering", "collaboration"
         ],
         "Providers": [
             "physician", "provider", "doctor", "team", "staff",
             "pa-c", "md", "do", "phd", "nurse", "therapist",
-            "surgeon", "specialist", "expert"
+            "surgeon", "specialist", "expert", "breast-reconstruction-surgeons"
         ],
         "Locations": [
             "location", "office", "clinic", "contact", "directions",
@@ -58,28 +62,31 @@ class Categorizer:
         "Patient Resources": [
             "patient", "form", "insurance", "download", "faq",
             "appointment", "schedule", "privacy", "policy", "rights",
-            "billing", "payment", "testimonial", "review",
-            "request-appointment", "payment-plan" 
+            "billing", "payment", "testimonial", "testimonials", "review", "reviews",
+            "request-appointment", "payment-plan", "consultation",
+            "patient-portal", "support", "events", "quality-survey",
+            "experience", "story", "stories", "success-story"
         ],
         "About": [
             "about", "mission", "vision", "values", "history",
             "career", "join", "team", "culture", "story",
-            "welcome", "introduction", "who-we-are"
+            "welcome", "introduction", "who-we-are", "how-were-different"
         ]
     }
     
-    def __init__(self, use_gpt: bool = False, api_key: Optional[str] = None):
-        self.use_gpt = use_gpt
+    def __init__(self, use_gpt: bool = True, api_key: Optional[str] = None):
+        # AI enhancement is now mandatory
+        self.use_gpt = True
         self.patterns = self.DEFAULT_PATTERNS.copy()
         
-        if use_gpt:
-            if not api_key:
-                api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("OpenAI API key required for GPT enhancement")
-            
-            self.client = OpenAI(api_key=api_key)
-            self.encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+        # Always initialize GPT client
+        if not api_key:
+            api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OpenAI API key required - AI enhancement is mandatory for optimal LLMS.txt generation")
+        
+        self.client = OpenAI(api_key=api_key)
+        self.encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
     
     def update_patterns(self, custom_patterns: Dict[str, List[str]]):
         """Update or add custom categorization patterns"""
@@ -174,48 +181,93 @@ class Categorizer:
         }
     
     def pattern_based_categorize(self, page: Dict) -> str:
-        """Categorize a single page using patterns"""
+        """Enhanced categorization with healthcare-specific logic"""
         url = self.normalize_url(page.get('Address', ''))
         title = page.get('Title 1', '').lower()
         meta = page.get('Meta Description 1', '').lower()
         h1 = page.get('H1-1', '').lower()
         
-        # PRIORITY 0: Check for news/announcement patterns FIRST
-        news_indicators = [
+        # PRIORITY 0: Before & After Detection (HIGHEST PRIORITY)
+        before_after_indicators = [
+            'before-and-after', 'before & after', 'before and after',
+            'transformation', 'results', 'gallery', 'high-definition',
+            'before-after'
+        ]
+        
+        # Check URL and title for before & after content
+        for indicator in before_after_indicators:
+            if (indicator in url or indicator in title or 
+                'before & after' in title or 'before and after' in title):
+                return "Before & After"
+        
+        # PRIORITY 1: Enhanced Blog Content Detection
+        
+        # Catch milestone/achievement posts by pattern
+        # Specific healthcare blog indicators
+        healthcare_blog_indicators = [
             'new surgical center opens',
             'opens flagship',
             'featured in forbes',
             'announcement',
             'press release',
-            'news:'
+            'news:',
+            'study finds',
+            'research shows',
+            'breakthrough',
+            'collaboration',
+            'partnership',
+            'prma celebrates',
+            'prma performs',
+            'prma reaches'
         ]
         
-        for indicator in news_indicators:
+        for indicator in healthcare_blog_indicators:
             if indicator in title or indicator in meta:
                 return "Blog"
-
-        # PRIORITY 1: Check URL structure first for definitive categorization
-        # Blog posts should ALWAYS go in Blog category
-        if '/blog/' in url:
+        
+        # PRIORITY 1: Testimonials Detection (Important for Healthcare)
+        testimonial_indicators = ['testimonial', 'testimonials', 'story', 'stories', 'experience', 'success-story']
+        
+        for indicator in testimonial_indicators:
+            if indicator in url or indicator in title.lower():
+                return "Patient Resources"
+        
+        # PRIORITY 2: Enhanced Blog Content Detection
+        blog_url_patterns = [
+            '/blog/',                    # Standard: /blog/post-title
+            '-blog/',                    # Healthcare: /surgery-blog/post-title, /plastic-surgery-blog/  
+            '/blog-',                    # Alternative: /blog-category/post
+            'blog/',                     # Edge case: domain.com/blog/post
+            '/news/',                    # News sections
+            '/articles/',                # Article sections
+            '/insights/',                # Insights/thought leadership
+        ]
+        
+        # Also check if 'blog' appears in URL path (not domain)
+        url_path = re.sub(r'^https?://[^/]+', '', url)  # Remove domain
+        if 'blog' in url_path and url_path.count('/') >= 2:  # At least /something-blog/post structure
             return "Blog"
         
-        # Patient info/resources pages
-        if '/patient-information/' in url or '/patient-resources/' in url:
+        for pattern in blog_url_patterns:
+            if pattern in url:
+                return "Blog"
+        
+        # PRIORITY 3: URL Structure Categorization
+        if ('/patient-information/' in url or '/patient-resources/' in url or 
+            '/testimonials/' in url or '/testimonial/' in url):
             return "Patient Resources"
         
-        # Location pages
         if '/locations/' in url:
             return "Locations"
         
-        # Provider/physician pages
-        if '/physicians/' in url or '/providers/' in url:
+        if ('/physicians/' in url or '/providers/' in url or 
+            '/breast-reconstruction-surgeons/' in url):
             return "Providers"
         
-        # Service pages
-        if '/services/' in url:
+        if '/services/' in url or '/cosmetic-surgery/' in url:
             return "Services"
         
-        # PRIORITY 2: If no clear URL pattern, use content matching
+        # PRIORITY 4: Content-based pattern matching
         combined_text = f"{url} {title} {meta} {h1}"
         url_segments = self.extract_url_segments(url)
         
@@ -242,18 +294,17 @@ class Categorizer:
         """Main categorization method - ALWAYS use patterns, optionally enhance"""
         
         # ALWAYS use pattern-based categorization for accuracy
-        logger.info("Using pattern-based categorization...")
+        logger.info("Using enhanced pattern-based categorization for healthcare...")
         categorized = self._pattern_categorize_all(pages)
         
-        # If GPT is enabled, use it for title AND description enhancement
-        if self.use_gpt:
-            logger.info("Enhancing titles and descriptions with GPT...")
-            categorized = self._enhance_categorized_content(categorized, site_metadata)
+        # Always enhance with GPT for optimal LLMS.txt
+        logger.info("Enhancing titles and descriptions with AI for LLMS.txt optimization...")
+        categorized = self._enhance_categorized_content(categorized, site_metadata)
         
         return categorized
     
     def _pattern_categorize_all(self, pages: List[Dict]) -> Dict[str, List[Dict]]:
-        """Categorize all pages using patterns"""
+        """Categorize all pages using enhanced patterns"""
         categorized = defaultdict(list)
         
         for page in pages:
@@ -264,11 +315,22 @@ class Categorizer:
             
             categorized[category].append(page_entry)
         
-        # Sort categories by number of pages (descending)
+        # Sort categories by priority, then by number of pages
+        category_priority = {
+            "About": 1,
+            "Services": 2, 
+            "Before & After": 3,
+            "Providers": 4,
+            "Locations": 5,
+            "Patient Resources": 6,
+            "Blog": 7,
+            "Areas Treated": 8,
+            "Other": 99
+        }
+        
         sorted_categories = dict(
             sorted(categorized.items(), 
-                   key=lambda x: len(x[1]), 
-                   reverse=True)
+                   key=lambda x: (category_priority.get(x[0], 50), -len(x[1])))
         )
         
         return sorted_categories
@@ -277,8 +339,8 @@ class Categorizer:
                                    site_metadata: Dict) -> Dict[str, List[Dict]]:
         """Enhance both titles and descriptions for already-categorized pages"""
         
-        # Include Blog in sections to enhance
-        sections_to_enhance = ['Services', 'Providers', 'Locations', 'Blog']
+        # Include all main sections for enhancement
+        sections_to_enhance = ['Services', 'Before & After', 'Providers', 'Locations', 'Blog']
         enhanced_categorized = categorized.copy()
         
         for section in sections_to_enhance:
@@ -294,43 +356,63 @@ class Categorizer:
             for i in range(0, len(pages), 10):
                 batch = pages[i:i+10]
                 
-                # Different prompt for Blog section
+                # Customize prompt based on section
                 if section == 'Blog':
-                    prompt = f"""You are optimizing blog content for AI search engines (ChatGPT, Claude, Perplexity) and LLMS.txt files.
+                    prompt = f"""You are optimizing content specifically for LLMS.txt files to maximize discoverability in AI search engines (ChatGPT, Claude, Perplexity, Google Gemini).
 Site: {site_metadata.get('site_title', '')}
 
-For each blog post below, provide an optimized title and description. 
+For each blog post below, create titles and descriptions optimized for LLMS.txt format.
 
 TITLE requirements:
 - Clear, descriptive, and specific about what the article covers
-- Optimized for AI search understanding
+- Include keywords an AI would search for
 - Concise but informative (under 60 characters when possible)
 - Remove generic words like "Blog |" or site branding
 
-DESCRIPTION requirements:
-- 15-25 words explaining what readers will learn
-- Uses natural, complete sentences (no truncation marks)
-- Actionable and informative
+DESCRIPTION requirements for LLMS.txt:
+- 15-25 words that clearly state what readers will learn
+- Include action words and outcomes
+- Natural language that AI assistants can understand and recommend
+- Focus on user intent and search queries
 
 Blog posts:
 """
+                elif section == 'Before & After':
+                    prompt = f"""You are optimizing visual content for LLMS.txt files to help AI search engines understand and recommend procedures.
+Site: {site_metadata.get('site_title', '')}
+
+For each gallery page, create LLMS.txt optimized titles and descriptions.
+
+TITLE requirements:
+- Clear about the procedure/surgery shown
+- Include "Before & After" for clarity
+- Keywords that patients search for
+
+DESCRIPTION requirements for LLMS.txt:
+- 15-25 words describing the transformation and results
+- Focus on outcomes and benefits
+- Language that helps AI assistants match patient queries
+
+Gallery pages:
+"""
                 else:
-                    prompt = f"""You are optimizing content for AI search engines (ChatGPT, Claude, Perplexity) and LLMS.txt files.
+                    prompt = f"""You are creating content specifically for LLMS.txt files - the standard format for AI search engine discovery.
 Site: {site_metadata.get('site_title', '')}
 Section: {section}
 
-For each page below, provide an optimized title and description.
+Optimize each page for maximum AI search visibility in LLMS.txt format.
 
-TITLE requirements:
+TITLE requirements for LLMS.txt:
 - Clear and specific about the service/solution offered
-- Optimized for AI search understanding  
-- Concise but descriptive (under 60 characters when possible)
-- Remove generic site branding or unnecessary words
+- Include terms users ask AI assistants about
+- Concise but descriptive (under 60 characters)
+- Natural language that flows in LLMS.txt list format
 
-DESCRIPTION requirements:
-- 15-25 words stating the specific benefit or outcome
-- Includes keywords AI would search for
-- Specific, not generic
+DESCRIPTION requirements for LLMS.txt:
+- 15-25 words focusing on benefits and outcomes
+- Answer the "what does this do for me?" question
+- Keywords and phrases AI systems recognize
+- Action-oriented language
 
 Pages:
 """
@@ -357,7 +439,7 @@ NO other text, NO trailing commas, NO truncation marks."""
                     response = self.client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
-                            {"role": "system", "content": "You are an AI search optimization expert. Write complete, natural titles and descriptions without truncation marks."},
+                            {"role": "system", "content": "You are an LLMS.txt optimization expert. Create titles and descriptions specifically formatted for LLMS.txt files to maximize AI search engine discovery. Write complete, natural language without truncation marks."},
                             {"role": "user", "content": prompt}
                         ],
                         temperature=0.7,
@@ -412,7 +494,7 @@ NO other text, NO trailing commas, NO truncation marks."""
         
         return enhanced_categorized
     
-    # DEPRECATED METHODS - Left for reference but not used
+    # Keep deprecated methods for backward compatibility
     def prepare_page_for_gpt(self, page: Dict) -> Dict:
         """DEPRECATED - Only used in old GPT categorization"""
         display_data = self.prepare_page_for_display(page)

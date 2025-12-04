@@ -22,15 +22,13 @@ class LLMSProcessor:
     
     def __init__(self, 
                  output_dir: str = "exports",
-                 use_gpt: bool = False,
                  api_key: Optional[str] = None):
         self.output_dir = output_dir
-        self.use_gpt = use_gpt
         self.api_key = api_key
         
-        # Initialize components
+        # Initialize components - AI enhancement is now mandatory
         self.csv_processor = None
-        self.categorizer = Categorizer(use_gpt=use_gpt, api_key=api_key)
+        self.categorizer = Categorizer(use_gpt=True, api_key=api_key)  # Always use GPT
         self.generator = LLMSGenerator(output_dir=output_dir)
         
         # Store results for access

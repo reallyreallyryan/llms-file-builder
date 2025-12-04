@@ -31,7 +31,6 @@ def main():
         epilog='''
 Examples:
   python run.py data/crawl.csv
-  python run.py data/crawl.csv --use-gpt
   python run.py data/crawl.csv --preview
   python run.py data/crawl.csv --output mysite_llms
   python run.py data/crawl.csv --force
@@ -43,11 +42,7 @@ Examples:
         help="Path to Screaming Frog CSV export"
     )
     
-    parser.add_argument(
-        "--use-gpt",
-        action="store_true",
-        help="Use GPT for intelligent categorization (requires OpenAI API key)"
-    )
+    # AI enhancement is now mandatory - no need for flag
     
     parser.add_argument(
         "--preview",
@@ -80,8 +75,8 @@ Examples:
         print(f"❌ Error: File not found: {args.csv_path}")
         sys.exit(1)
     
-    # Initialize processor
-    processor = LLMSProcessor(use_gpt=args.use_gpt)
+    # Initialize processor with mandatory AI enhancement
+    processor = LLMSProcessor()
     
     # Validate CSV quality
     print(f"Analyzing {args.csv_path}...")
@@ -132,12 +127,9 @@ Examples:
     
     # Process file
     print(f"\n🔄 Processing {estimated_content_pages} estimated content pages...")
-    if args.use_gpt:
-        # Estimate processing time (roughly 0.2 seconds per page for GPT)
-        estimated_time = estimated_content_pages * 0.2
-        print(f"🤖 Using GPT for categorization (estimated time: {estimated_time:.0f} seconds)...")
-    else:
-        print("⚡ Using pattern-based categorization (fast mode)...")
+    # Estimate processing time (roughly 0.2 seconds per page for AI enhancement)
+    estimated_time = estimated_content_pages * 0.2
+    print(f"🤖 Using AI optimization for LLMS.txt (estimated time: {estimated_time:.0f} seconds)...")
     
     result = processor.process_file(
         args.csv_path,
@@ -167,11 +159,10 @@ Examples:
         if args.preview:
             print(f"\n--- Preview ---")
             print(result['preview'])
-            print("\n💡 Use without --preview to save the files")
+            print("\n💡 Use without --preview to save the file")
         else:
-            print(f"\n📄 Files saved:")
+            print(f"\n📄 File saved:")
             print(f"  LLMS.txt: {result['files']['txt_path']}")
-            print(f"  LLMS.json: {result['files']['json_path']}")
             
             if result.get('validation_issues'):
                 print(f"\n⚠️  Minor issues:")
