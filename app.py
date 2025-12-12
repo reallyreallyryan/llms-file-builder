@@ -15,12 +15,56 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+def check_password():
+    """Returns True if the user entered the correct password."""
+    
+    def password_entered():
+        """Checks whether the password is correct."""
+        if st.session_state["password"] == st.secrets["app_password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Don't store password
+        else:
+            st.session_state["password_correct"] = False
+
+    # First run, show input
+    if "password_correct" not in st.session_state:
+        st.text_input(
+            "Password", 
+            type="password", 
+            on_change=password_entered, 
+            key="password"
+        )
+        st.caption("Enter the team password to access the LLMS File Builder")
+        return False
+    
+    # Password incorrect, show input + error
+    elif not st.session_state["password_correct"]:
+        st.text_input(
+            "Password", 
+            type="password", 
+            on_change=password_entered, 
+            key="password"
+        )
+        st.error("😕 Incorrect password. Please try again.")
+        return False
+    
+    # Password correct
+    else:
+        return True
+
 # Page config
 st.set_page_config(
     page_title="LLMS File Builder",
     page_icon="🧠",
     layout="wide"
 )
+
+# ========================================
+# PASSWORD GATE
+# ========================================
+if not check_password():
+    st.stop()  # Stop execution if password is wrong
+# ========================================
 
 # Initialize session state
 if 'processing_complete' not in st.session_state:
@@ -39,15 +83,13 @@ with st.sidebar:
     # AI Enhancement is now mandatory - just check for API key
     st.info("✨ AI optimization is enabled for all LLMS.txt files")
     
-    # Check for API key
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        st.warning("⚠️ OpenAI API key not found in .env file")
-        api_key = st.text_input("Enter OpenAI API Key:", type="password")
-        if api_key:
-            os.environ["OPENAI_API_KEY"] = api_key
+    # Load API key from secrets (invisible to user)
+    if "OPENAI_API_KEY" in st.secrets:
+        os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+        st.success("✅ Ready to generate LLMS.txt files")
     else:
-        st.success("✅ OpenAI API key loaded")
+        st.error("❌ API key not configured. Contact administrator.")
+        st.stop()
     
     st.divider()
     
