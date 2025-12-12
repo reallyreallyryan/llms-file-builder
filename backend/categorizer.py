@@ -358,61 +358,72 @@ class Categorizer:
                 
                 # Customize prompt based on section
                 if section == 'Blog':
-                    prompt = f"""You are optimizing content specifically for LLMS.txt files to maximize discoverability in AI search engines (ChatGPT, Claude, Perplexity, Google Gemini).
+                    prompt = f"""You are optimizing blog content specifically for LLMS.txt files to help AI search engines understand and recommend articles.
 Site: {site_metadata.get('site_title', '')}
 
-For each blog post below, create titles and descriptions optimized for LLMS.txt format.
+For each blog post below, write LLMS.txt optimized entries.
 
 TITLE requirements:
-- Clear, descriptive, and specific about what the article covers
-- Include keywords an AI would search for
-- Concise but informative (under 60 characters when possible)
-- Remove generic words like "Blog |" or site branding
+- Keep the existing title if it's already clear and specific
+- Only modify if it contains site branding or is too vague
+- Ensure it describes what the article is about
 
-DESCRIPTION requirements for LLMS.txt:
-- 15-25 words that clearly state what readers will learn
-- Include action words and outcomes
-- Natural language that AI assistants can understand and recommend
-- Focus on user intent and search queries
+DESCRIPTION requirements - Answer: "What will readers learn from this?"
+- 15-25 words focusing on key takeaways and insights
+- Use conversational language: "Explains how..." "Shows why..." "Reveals what..."
+- Include specific benefits or knowledge gained
+- NO SEO phrases like "Learn about" or "Discover"
+
+Example:
+BAD: "Learn about our latest breast reconstruction techniques and innovations."
+GOOD: "New microsurgical techniques reduce recovery time and improve natural tissue reconstruction outcomes."
 
 Blog posts:
 """
                 elif section == 'Before & After':
-                    prompt = f"""You are optimizing visual content for LLMS.txt files to help AI search engines understand and recommend procedures.
+                    prompt = f"""You are optimizing visual gallery content for LLMS.txt files to help AI assistants understand surgical outcomes.
 Site: {site_metadata.get('site_title', '')}
 
-For each gallery page, create LLMS.txt optimized titles and descriptions.
+For each gallery page, write LLMS.txt optimized entries.
 
 TITLE requirements:
-- Clear about the procedure/surgery shown
-- Include "Before & After" for clarity
-- Keywords that patients search for
+- Keep "Before & After" in title for clarity
+- Include the specific procedure name
+- Maintain medical accuracy
 
-DESCRIPTION requirements for LLMS.txt:
-- 15-25 words describing the transformation and results
-- Focus on outcomes and benefits
-- Language that helps AI assistants match patient queries
+DESCRIPTION requirements - Answer: "What transformation does this show?"
+- 15-25 words describing visible results and improvements
+- Focus on patient outcomes: "Shows how..." "Demonstrates results of..."
+- Include recovery timeframe if relevant
+- Use factual, outcome-based language
+
+Example:
+BAD: "View our amazing breast reconstruction before and after gallery."
+GOOD: "Visual documentation shows natural-looking results achieved through DIEP flap reconstruction with minimal scarring."
 
 Gallery pages:
 """
                 else:
-                    prompt = f"""You are creating content specifically for LLMS.txt files - the standard format for AI search engine discovery.
+                    prompt = f"""You are writing LLMS.txt entries that help AI assistants recommend services to users asking questions.
 Site: {site_metadata.get('site_title', '')}
 Section: {section}
 
-Optimize each page for maximum AI search visibility in LLMS.txt format.
+Write entries that answer user questions about services and solutions.
 
-TITLE requirements for LLMS.txt:
-- Clear and specific about the service/solution offered
-- Include terms users ask AI assistants about
-- Concise but descriptive (under 60 characters)
-- Natural language that flows in LLMS.txt list format
+TITLE requirements:
+- Keep existing title if it clearly names the service
+- Only modify to add clarity about what's offered
+- Include medical/technical terms patients search for
 
-DESCRIPTION requirements for LLMS.txt:
-- 15-25 words focusing on benefits and outcomes
-- Answer the "what does this do for me?" question
-- Keywords and phrases AI systems recognize
-- Action-oriented language
+DESCRIPTION requirements - Answer: "How does this help patients?"
+- 15-25 words describing the solution and its benefits
+- Start with action: "Provides..." "Offers..." "Delivers..." "Treats..."
+- Include specific outcomes or improvements
+- Avoid marketing language - focus on factual benefits
+
+Example:
+BAD: "Discover our innovative approach to pain management solutions."
+GOOD: "Non-surgical nerve blocks provide immediate pain relief for chronic back conditions lasting 6-12 months."
 
 Pages:
 """
@@ -425,21 +436,36 @@ Pages:
                     if current_desc:
                         current_desc = current_desc.replace('[…]', '').replace('[...]', '').replace('…', '').strip()
                     
-                    prompt += f"\n{j+1}. Current Title: {current_title}"
-                    prompt += f"\n   Current Description: {current_desc[:100] if current_desc else 'None'}"
-                    prompt += f"\n   URL: {page['url']}\n"
+                    prompt += f"\n{j+1}. URL: {page['url']}"
+                    prompt += f"\n   Page Topic: {current_title}"  # Use as context, not template
+                    # Don't show the meta description at all - it anchors GPT too much
                 
                 prompt += """
-Return ONLY a JSON array with enhanced titles and descriptions:
+Return ONLY a JSON array with enhanced entries:
 [{"index": 1, "title": "...", "description": "..."}, {"index": 2, "title": "...", "description": "..."}, ...]
 
-NO other text, NO trailing commas, NO truncation marks."""
+REMEMBER: Keep titles mostly unchanged unless they're unclear. Focus on writing great descriptions.
+NO other text, NO trailing commas, NO truncation marks like [...] or ..."""
 
                 try:
                     response = self.client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
-                            {"role": "system", "content": "You are an LLMS.txt optimization expert. Create titles and descriptions specifically formatted for LLMS.txt files to maximize AI search engine discovery. Write complete, natural language without truncation marks."},
+                            {"role": "system", 
+                             "content": """You are writing llms.txt entries - NOT rewriting SEO metadata.
+
+Your goal: Write descriptions that help AI assistants recommend these pages when users ask questions.
+
+CRITICAL RULES:
+1. DO NOT rephrase the page title - create a conversational description
+2. DO NOT use SEO-style language like "Learn about..." or "Discover..."  
+3. DO write as if answering: "What would someone get from this page?"
+4. Focus on USER OUTCOMES, not page content
+5. 15-25 words, natural language AI assistants can parse
+
+BAD: "Learn about our breast augmentation services and procedures."
+GOOD: "Board-certified surgeons perform breast augmentation with natural-looking results and personalized sizing consultations."
+"""},
                             {"role": "user", "content": prompt}
                         ],
                         temperature=0.7,
